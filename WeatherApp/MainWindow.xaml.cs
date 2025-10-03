@@ -113,14 +113,14 @@ namespace WeatherApp
             // Data for each day
             var days = new[]
             {
-                new { Day="Mon", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="23°", Low="16°", Desc="Sunny" },
-                new { Day="Tue", Icon="\uF002", Color=Color.FromArgb(0xFF,0xA3,0xA3,0xA3), High="21°", Low="15°", Desc="Cloudy" },
-                new { Day="Wed", Icon="\uF008", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="19°", Low="14°", Desc="Rain" },
-                new { Day="Thu", Icon="\uF002", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="22°", Low="15°", Desc="Partly Cloudy" },
-                new { Day="Fri", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="24°", Low="17°", Desc="Sunny" },
-                new { Day="Sat", Icon="\uF009", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="20°", Low="13°", Desc="Showers" },
-                new { Day="Sun", Icon="\uF010", Color=Color.FromArgb(0xFF,0xF8,0x71,0x71), High="18°", Low="12°", Desc="Thunderstorm" }
-            };
+        new { Day="Mon", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="23°", Low="16°", Desc="Sunny" },
+        new { Day="Tue", Icon="\uF002", Color=Color.FromArgb(0xFF,0xA3,0xA3,0xA3), High="21°", Low="15°", Desc="Cloudy" },
+        new { Day="Wed", Icon="\uF008", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="19°", Low="14°", Desc="Rain" },
+        new { Day="Thu", Icon="\uF002", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="22°", Low="15°", Desc="Partly Cloudy" },
+        new { Day="Fri", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="24°", Low="17°", Desc="Sunny" },
+        new { Day="Sat", Icon="\uF009", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="20°", Low="13°", Desc="Showers" },
+        new { Day="Sun", Icon="\uF010", Color=Color.FromArgb(0xFF,0xF8,0x71,0x71), High="18°", Low="12°", Desc="Thunderstorm" }
+    };
 
             foreach (var d in days)
             {
@@ -205,10 +205,24 @@ namespace WeatherApp
                 // Subtle shadow effect (optional)
                 card.Shadow = new ThemeShadow();
 
+                // Store original background for restoring
+                var originalBackground = card.Background;
+
+                // Highlight on hover
+                card.PointerEntered += (s, e) =>
+                {
+                    card.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0xE0, 0xF0, 0xFF)); // Light blue highlight
+                };
+                card.PointerExited += (s, e) =>
+                {
+                    card.Background = originalBackground;
+                };
+
                 panel.Children.Add(card);
             }
 
             return panel;
         }
+
     }
 }
