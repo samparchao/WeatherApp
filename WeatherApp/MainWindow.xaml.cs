@@ -7,6 +7,7 @@ using Windows.UI;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI;
 using System;
+using Microsoft.UI.Xaml.Controls;
 
 namespace WeatherApp
 {
@@ -123,68 +124,100 @@ namespace WeatherApp
                     SlideDownDetails();
             };
 
-            // Details card (slide-up)
+            // Details card (slide-up) with Apple Weather app aesthetic
             detailsCard = new Border
             {
-                Background = new SolidColorBrush(Colors.White),
                 CornerRadius = new CornerRadius(24, 24, 0, 0),
-                Height = 320,
+                Height = 340,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 Margin = new Thickness(0),
                 Width = 420,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 RenderTransform = new TranslateTransform { Y = 400 },
+                // Frosted glass effect (AcrylicBrush)
+                Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF),
+                    TintOpacity = 0.7,
+                    FallbackColor = Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF),
+                    AlwaysUseFallback = false // optional, default is false
+                },
+                Shadow = new ThemeShadow(),
                 Child = new StackPanel
                 {
-                    Spacing = 16,
-                    Margin = new Thickness(32, 24, 32, 24),
+                    Spacing = 12,
+                    Margin = new Thickness(24, 16, 24, 24),
                     Children =
+        {
+            // Drag handle
+            new Grid
             {
-                new TextBlock
+                Height = 24,
+                Children =
                 {
-                    Text = "Day Details",
-                    FontSize = 28,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = new SolidColorBrush(Colors.Black),
-                    Margin = new Thickness(0,0,0,8)
-                },
-                new TextBlock
-                {
-                    Text = "High: 23°  Low: 16°",
-                    FontSize = 20,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                },
-                new TextBlock
-                {
-                    Text = "Condition: Sunny",
-                    FontSize = 20,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                },
-                new TextBlock
-                {
-                    Text = "Humidity: 50%",
-                    FontSize = 20,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                },
-                new TextBlock
-                {
-                    Text = "Wind: 10 km/h",
-                    FontSize = 20,
-                    Foreground = new SolidColorBrush(Colors.Black)
-                },
-                new Button
-                {
-                    Content = "Close",
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin = new Thickness(0, 16, 0, 0),
-                    Width = 80,
-                    ClickMode = ClickMode.Release
+                    new Border
+                    {
+                        Height = 5,
+                        Width = 48,
+                        CornerRadius = new CornerRadius(3),
+                        Background = new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(0, 8, 0, 0)
+                    }
                 }
+            },
+            new TextBlock
+            {
+                Text = "Day Details",
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
+                Margin = new Thickness(0, 0, 0, 4)
+            },
+            new TextBlock
+            {
+                Text = "High: 23°   Low: 16°",
+                FontSize = 18,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
+                Margin = new Thickness(0, 0, 0, 2)
+            },
+            new TextBlock
+            {
+                Text = "Condition: Sunny",
+                FontSize = 18,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
+                Margin = new Thickness(0, 0, 0, 2)
+            },
+            new TextBlock
+            {
+                Text = "Humidity: 50%",
+                FontSize = 18,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
+                Margin = new Thickness(0, 0, 0, 2)
+            },
+            new TextBlock
+            {
+                Text = "Wind: 10 km/h",
+                FontSize = 18,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
+                Margin = new Thickness(0, 0, 0, 2)
+            },
+            new Button
+            {
+                Content = "Close",
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 16, 0, 0),
+                Width = 80,
+                ClickMode = ClickMode.Release
             }
+        }
                 }
             };
 
-            ((detailsCard.Child as StackPanel).Children[5] as Button).Click += (s, e) => SlideDownDetails();
+
+            ((detailsCard.Child as StackPanel).Children[6] as Button).Click += (s, e) => SlideDownDetails();
 
             overlayPanel.Children.Add(detailsCard);
 
@@ -363,10 +396,12 @@ namespace WeatherApp
                     FontWeight = FontWeights.Bold,
                     Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
                     VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Right
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 0, 4, 0) // Optional: small space between high and low
                 };
                 Grid.SetColumn(high, 3);
                 card.Children.Add(high);
+
 
                 // Low Temp
                 var low = new TextBlock
@@ -375,10 +410,12 @@ namespace WeatherApp
                     FontSize = 18,
                     Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0x22, 0x22, 0x22)),
                     VerticalAlignment = VerticalAlignment.Center,
-                    HorizontalAlignment = HorizontalAlignment.Right
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 0, 12, 0) // Add right margin to prevent clipping
                 };
                 Grid.SetColumn(low, 4);
                 card.Children.Add(low);
+
 
                 // Subtle shadow effect (optional)
                 card.Shadow = new ThemeShadow();
