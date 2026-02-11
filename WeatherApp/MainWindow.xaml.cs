@@ -1,10 +1,14 @@
+using Microsoft.UI;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Text;
-using Windows.UI;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
+using System.Numerics;
+using Windows.UI;
 
 namespace WeatherApp
 {
@@ -12,435 +16,633 @@ namespace WeatherApp
     {
         private Grid overlayPanel;
         private Border detailsCard;
-        private Storyboard slideUpStoryboard;
-        private Storyboard slideDownStoryboard;
+
+        private TextBlock detailsTitle;
+        private TextBlock detailsHighLow;
+        private TextBlock detailsCondValue;
+        private TextBlock detailsHumidValue;
+        private TextBlock detailsWindValue;
+        private TextBlock detailsUVValue;
+        private TextBlock detailsIcon;
+
+        private static readonly FontFamily WeatherIconsFont =
+            new("ms-appx:///Assets/weathericons-regular-webfont.ttf#Weather Icons");
+        private static readonly FontFamily DisplayFont = new("Segoe UI Variable Display");
+        private static readonly FontFamily TextFont = new("Segoe UI Variable Text");
+
+        private record ForecastDay(
+            string Day, string FullDay, string Icon, Color IconColor,
+            string High, string Low, string Desc,
+            string Humidity, string Wind, string UV);
+
+        private static readonly ForecastDay[] Forecast =
+        [
+            new("Mon", "Monday",    "\uF00D", Color.FromArgb(0xFF,0xFF,0xD4,0x5E), "23°","16°","Sunny",        "45%","8 km/h", "6"),
+            new("Tue", "Tuesday",   "\uF002", Color.FromArgb(0xFF,0xB0,0xBE,0xCE), "21°","15°","Cloudy",       "62%","12 km/h","3"),
+            new("Wed", "Wednesday", "\uF008", Color.FromArgb(0xFF,0x5B,0xC0,0xF8), "19°","14°","Rain",         "78%","18 km/h","2"),
+            new("Thu", "Thursday",  "\uF002", Color.FromArgb(0xFF,0xF0,0xC8,0x5E), "22°","15°","Partly Cloudy","55%","10 km/h","5"),
+            new("Fri", "Friday",    "\uF00D", Color.FromArgb(0xFF,0xFF,0xD4,0x5E), "24°","17°","Sunny",        "40%","6 km/h", "7"),
+            new("Sat", "Saturday",  "\uF009", Color.FromArgb(0xFF,0x5B,0xC0,0xF8), "20°","13°","Showers",      "72%","15 km/h","2"),
+            new("Sun", "Sunday",    "\uF010", Color.FromArgb(0xFF,0xF0,0x78,0x78), "18°","12°","Thunderstorm", "85%","22 km/h","1"),
+        ];
 
         public MainWindow()
         {
             this.InitializeComponent();
+            this.Title = "Weather";
+            this.ExtendsContentIntoTitleBar = true;
+            this.AppWindow.Resize(new Windows.Graphics.SizeInt32(480, 780));
 
-            // Root Grid with gradient background
-            var rootGrid = new Grid();
-            rootGrid.Background = new LinearGradientBrush
-            {
-                StartPoint = new Windows.Foundation.Point(0, 0),
-                EndPoint = new Windows.Foundation.Point(0, 1),
-                GradientStops = {
-            new GradientStop { Color = Color.FromArgb(0xFF, 0x6D, 0xA6, 0xF7), Offset = 0 },
-            new GradientStop { Color = Color.FromArgb(0xFF, 0xB4, 0xD8, 0xFE), Offset = 1 }
+            BuildUI();
         }
+
+        private void BuildUI()
+        {
+            var rootGrid = new Grid
+            {
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0.3, 0),
+                    EndPoint = new Windows.Foundation.Point(0.7, 1),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x0D, 0x14, 0x2B), Offset = 0 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x1B, 0x2A, 0x4A), Offset = 0.25 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x2A, 0x40, 0x6A), Offset = 0.55 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x3D, 0x5A, 0x8C), Offset = 0.8 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x4E, 0x6E, 0xA0), Offset = 1 }
+                    }
+                }
             };
 
-            // Row definitions
+            rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            // App Title
-            var title = new TextBlock
+            // Location header
+            var headerStack = new StackPanel
             {
-                Text = "PlaceHolder",
-                FontSize = 36,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
-                Margin = new Thickness(0, 32, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                FontFamily = new FontFamily("Segoe UI Variable")
+                Margin = new Thickness(0, 48, 0, 0),
+                Spacing = 2
             };
-            Grid.SetRow(title, 0);
-            rootGrid.Children.Add(title);
 
-            // Current temperature and condition
+            headerStack.Children.Add(new TextBlock
+            {
+                Text = "San Francisco",
+                FontSize = 34,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.White),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                FontFamily = DisplayFont
+            });
+
+            headerStack.Children.Add(new TextBlock
+            {
+                Text = DateTime.Now.ToString("dddd, MMMM d"),
+                FontSize = 14,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                FontFamily = TextFont
+            });
+
+            Grid.SetRow(headerStack, 0);
+            rootGrid.Children.Add(headerStack);
+
+            // Current weather hero
             var currentStack = new StackPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 4)
+            };
+
+            currentStack.Children.Add(new TextBlock
+            {
+                Text = "23°",
+                FontSize = 100,
+                FontWeight = FontWeights.Thin,
+                Foreground = new SolidColorBrush(Colors.White),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                FontFamily = DisplayFont,
+                Margin = new Thickness(0, -8, 0, -16)
+            });
+
+            var condRow = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 0),
-                Spacing = 16
+                Spacing = 8
             };
 
-            var weatherIconsFont = new FontFamily("ms-appx:///Assets/weathericons-regular-webfont.ttf#Weather Icons");
-            var currentIcon = new TextBlock
+            condRow.Children.Add(new TextBlock
             {
-                Text = "\uF00D", // Sunny
-                FontFamily = weatherIconsFont,
-                FontSize = 56,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xE2, 0x7D)),
+                Text = "\uF00D",
+                FontFamily = WeatherIconsFont,
+                FontSize = 18,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xD4, 0x5E)),
                 VerticalAlignment = VerticalAlignment.Center
-            };
-            currentStack.Children.Add(currentIcon);
+            });
 
-            var currentTemp = new TextBlock
-            {
-                Text = "23°",
-                FontSize = 56,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF)),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            currentStack.Children.Add(currentTemp);
-
-            var currentCond = new TextBlock
+            condRow.Children.Add(new TextBlock
             {
                 Text = "Sunny",
-                FontSize = 20,
-                FontWeight = FontWeights.Normal,
+                FontSize = 18,
                 Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
-                Margin = new Thickness(16, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            currentStack.Children.Add(currentCond);
+                VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = TextFont
+            });
+
+            currentStack.Children.Add(condRow);
+
+            currentStack.Children.Add(new TextBlock
+            {
+                Text = "H:24°  L:16°",
+                FontSize = 15,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = new Thickness(0, 4, 0, 0),
+                FontFamily = TextFont
+            });
 
             Grid.SetRow(currentStack, 1);
             rootGrid.Children.Add(currentStack);
 
-            // 7-Day Forecast Cards
-            var scrollViewer = new ScrollViewer
+            // Divider
+            var divider = new Border
             {
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Margin = new Thickness(0, 32, 0, 0),
-                Content = CreateForecastPanel(weatherIconsFont)
+                Height = 0.5,
+                Margin = new Thickness(28, 20, 28, 0),
+                Background = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF))
             };
-            Grid.SetRow(scrollViewer, 2);
-            rootGrid.Children.Add(scrollViewer);
+            Grid.SetRow(divider, 2);
+            rootGrid.Children.Add(divider);
 
-            // Overlay for details (initially hidden)
-            overlayPanel = new Grid
-            {
-                Background = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
-                Visibility = Visibility.Collapsed,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Stretch
-            };
+            // Forecast section
+            var forecastSection = new StackPanel();
 
-            // Dismiss overlay when clicking outside the card
-            overlayPanel.Tapped += (s, e) =>
+            forecastSection.Children.Add(new TextBlock
             {
-                if (e.OriginalSource == overlayPanel)
-                    SlideDownDetails();
-            };
-
-            // Details card (slide-up) with Apple Weather app aesthetic
-            detailsCard = new Border
-            {
-                CornerRadius = new CornerRadius(24, 24, 0, 0),
-                Height = 340,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                Margin = new Thickness(0),
-                Width = 420,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                RenderTransform = new TranslateTransform { Y = 400 },
-                // Frosted glass effect (AcrylicBrush)
-                Background = new AcrylicBrush
-                {
-                    TintColor = Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF),
-                    TintOpacity = 0.7,
-                    FallbackColor = Color.FromArgb(0xF2, 0xFF, 0xFF, 0xFF),
-                    AlwaysUseFallback = false // optional, default is false
-                },
-                Shadow = new ThemeShadow(),
-                Child = new StackPanel
-                {
-                    Spacing = 12,
-                    Margin = new Thickness(24, 16, 24, 24),
-                    Children =
-        {
-            // Drag handle
-            new Grid
-            {
-                Height = 24,
-                Children =
-                {
-                    new Border
-                    {
-                        Height = 5,
-                        Width = 48,
-                        CornerRadius = new CornerRadius(3),
-                        Background = new SolidColorBrush(Color.FromArgb(0x40, 0, 0, 0)),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(0, 8, 0, 0)
-                    }
-                }
-            },
-            new TextBlock
-            {
-                Text = "Day Details",
-                FontSize = 24,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
-                Margin = new Thickness(0, 0, 0, 4)
-            },
-            new TextBlock
-            {
-                Text = "High: 23°   Low: 16°",
-                FontSize = 18,
+                Text = "7-DAY FORECAST",
+                FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
-                Margin = new Thickness(0, 0, 0, 2)
-            },
-            new TextBlock
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                Margin = new Thickness(32, 16, 32, 8),
+                CharacterSpacing = 80,
+                FontFamily = TextFont
+            });
+
+            forecastSection.Children.Add(new ScrollViewer
             {
-                Text = "Condition: Sunny",
-                FontSize = 18,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
-                Margin = new Thickness(0, 0, 0, 2)
-            },
-            new TextBlock
-            {
-                Text = "Humidity: 50%",
-                FontSize = 18,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
-                Margin = new Thickness(0, 0, 0, 2)
-            },
-            new TextBlock
-            {
-                Text = "Wind: 10 km/h",
-                FontSize = 18,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
-                Margin = new Thickness(0, 0, 0, 2)
-            },
-            new Button
-            {
-                Content = "Close",
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 16, 0, 0),
-                Width = 80,
-                ClickMode = ClickMode.Release
-            }
-        }
-                }
-            };
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = CreateForecastPanel()
+            });
 
+            Grid.SetRow(forecastSection, 3);
+            rootGrid.Children.Add(forecastSection);
 
-            ((detailsCard.Child as StackPanel).Children[6] as Button).Click += (s, e) => SlideDownDetails();
+            // Overlay & details sheet
+            BuildOverlay(rootGrid);
 
-            overlayPanel.Children.Add(detailsCard);
-
-            // Ensure overlay is on top and spans all rows so it doesn't affect layout
-            rootGrid.Children.Add(overlayPanel);
-            Grid.SetRowSpan(overlayPanel, 3); // <-- This is the fix
-            Canvas.SetZIndex(overlayPanel, 99);
-
-
-            // Prepare animations
-            PrepareSlideAnimations();
-
-            // Set the content of the window
             this.Content = rootGrid;
         }
 
-
-        private void PrepareSlideAnimations()
+        private StackPanel CreateForecastPanel()
         {
-            // Slide up
-            slideUpStoryboard = new Storyboard();
-            var slideUpAnim = new DoubleAnimation
+            var panel = new StackPanel
             {
-                To = 0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(300)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(slideUpAnim, detailsCard.RenderTransform);
-            Storyboard.SetTargetProperty(slideUpAnim, "Y");
-            slideUpStoryboard.Children.Add(slideUpAnim);
-
-            // Slide down
-            slideDownStoryboard = new Storyboard();
-            var slideDownAnim = new DoubleAnimation
-            {
-                // Use the card's height for the slide-down target
-                To = detailsCard.Height,
-                Duration = new Duration(TimeSpan.FromMilliseconds(250)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
-            Storyboard.SetTarget(slideDownAnim, detailsCard.RenderTransform);
-            Storyboard.SetTargetProperty(slideDownAnim, "Y");
-            slideDownStoryboard.Children.Add(slideDownAnim);
-
-            slideDownStoryboard.Completed += (s, e) => overlayPanel.Visibility = Visibility.Collapsed;
-        }
-
-        private void SlideUpDetails()
-        {
-            detailsCard.UpdateLayout();
-            overlayPanel.UpdateLayout();
-
-            double cardHeight = detailsCard.ActualHeight > 0 ? detailsCard.ActualHeight : detailsCard.Height;
-
-            // Set the card's Y to just below the overlay (off-screen)
-            if (detailsCard.RenderTransform is TranslateTransform tt)
-            {
-                tt.Y = cardHeight;
-            }
-
-            overlayPanel.Visibility = Visibility.Visible;
-
-            // Animate to Y = 0 (so the card bottom aligns with overlay bottom)
-            var slideUpAnim = new DoubleAnimation
-            {
-                From = cardHeight,
-                To = 0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(300)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(slideUpAnim, detailsCard.RenderTransform);
-            Storyboard.SetTargetProperty(slideUpAnim, "Y");
-
-            var sb = new Storyboard();
-            sb.Children.Add(slideUpAnim);
-            sb.Begin();
-        }
-
-        private void SlideDownDetails()
-        {
-            double cardHeight = detailsCard.ActualHeight > 0 ? detailsCard.ActualHeight : detailsCard.Height;
-
-            var slideDownAnim = new DoubleAnimation
-            {
-                To = cardHeight,
-                Duration = new Duration(TimeSpan.FromMilliseconds(250)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
-            Storyboard.SetTarget(slideDownAnim, detailsCard.RenderTransform);
-            Storyboard.SetTargetProperty(slideDownAnim, "Y");
-
-            var sb = new Storyboard();
-            sb.Children.Add(slideDownAnim);
-            sb.Completed += (s, e) => overlayPanel.Visibility = Visibility.Collapsed;
-            sb.Begin();
-        }
-
-
-
-        private StackPanel CreateForecastPanel(FontFamily weatherIconsFont)
-        {
-            var panel = new StackPanel { Orientation = Orientation.Vertical, Spacing = 12, Margin = new Thickness(24, 0, 24, 24) };
-
-            // Data for each day
-            var days = new[]
-            {
-                new { Day="Mon", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="23°", Low="16°", Desc="Sunny" },
-                new { Day="Tue", Icon="\uF002", Color=Color.FromArgb(0xFF,0xA3,0xA3,0xA3), High="21°", Low="15°", Desc="Cloudy" },
-                new { Day="Wed", Icon="\uF008", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="19°", Low="14°", Desc="Rain" },
-                new { Day="Thu", Icon="\uF002", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="22°", Low="15°", Desc="Partly Cloudy" },
-                new { Day="Fri", Icon="\uF00D", Color=Color.FromArgb(0xFF,0xFF,0xE2,0x7D), High="24°", Low="17°", Desc="Sunny" },
-                new { Day="Sat", Icon="\uF009", Color=Color.FromArgb(0xFF,0x38,0xBD,0xF8), High="20°", Low="13°", Desc="Showers" },
-                new { Day="Sun", Icon="\uF010", Color=Color.FromArgb(0xFF,0xF8,0x71,0x71), High="18°", Low="12°", Desc="Thunderstorm" }
+                Spacing = 6,
+                Margin = new Thickness(20, 0, 20, 24)
             };
 
-            foreach (var d in days)
+            foreach (var day in Forecast)
             {
                 var card = new Grid
                 {
-                    Height = 56,
-                    Margin = new Thickness(0, 0, 0, 0),
-                    Background = new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)),
-                    CornerRadius = new CornerRadius(16)
+                    Height = 60,
+                    Padding = new Thickness(16, 0, 16, 0),
+                    Background = new AcrylicBrush
+                    {
+                        TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                        TintOpacity = 0.08,
+                        FallbackColor = Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+                    },
+                    CornerRadius = new CornerRadius(14),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(0x15, 0xFF, 0xFF, 0xFF)),
+                    BorderThickness = new Thickness(0.5)
                 };
 
-                // Columns: Day | Icon | Desc | High | Low
-                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
-                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
                 card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
-                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
+                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
+                card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
 
-                // Day
                 var dayText = new TextBlock
                 {
-                    Text = d.Day,
-                    FontSize = 18,
+                    Text = day.Day,
+                    FontSize = 16,
                     FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Colors.White),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
-                    Margin = new Thickness(16, 0, 0, 0)
+                    FontFamily = TextFont
                 };
                 Grid.SetColumn(dayText, 0);
                 card.Children.Add(dayText);
 
-                // Icon
                 var icon = new TextBlock
                 {
-                    Text = d.Icon,
-                    FontFamily = weatherIconsFont,
-                    FontSize = 28,
-                    Foreground = new SolidColorBrush(d.Color),
+                    Text = day.Icon,
+                    FontFamily = WeatherIconsFont,
+                    FontSize = 22,
+                    Foreground = new SolidColorBrush(day.IconColor),
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
                 Grid.SetColumn(icon, 1);
                 card.Children.Add(icon);
 
-                // Description
                 var desc = new TextBlock
                 {
-                    Text = d.Desc,
-                    FontSize = 16,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x22, 0x22, 0x22)),
+                    Text = day.Desc,
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 0, 0)
+                    Margin = new Thickness(8, 0, 0, 0),
+                    FontFamily = TextFont
                 };
                 Grid.SetColumn(desc, 2);
                 card.Children.Add(desc);
 
-                // High Temp
                 var high = new TextBlock
                 {
-                    Text = d.High,
-                    FontSize = 18,
-                    FontWeight = FontWeights.Bold,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x22, 0x22, 0x22)),
+                    Text = day.High,
+                    FontSize = 16,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Colors.White),
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin = new Thickness(0, 0, 4, 0) // Optional: small space between high and low
+                    FontFamily = TextFont
                 };
                 Grid.SetColumn(high, 3);
                 card.Children.Add(high);
 
-
-                // Low Temp
                 var low = new TextBlock
                 {
-                    Text = d.Low,
-                    FontSize = 18,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0x22, 0x22, 0x22)),
+                    Text = day.Low,
+                    FontSize = 16,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Right,
-                    Margin = new Thickness(0, 0, 12, 0) // Add right margin to prevent clipping
+                    FontFamily = TextFont
                 };
                 Grid.SetColumn(low, 4);
                 card.Children.Add(low);
 
-
-                // Subtle shadow effect (optional)
-                card.Shadow = new ThemeShadow();
-
-                // Store original background for restoring
-                var originalBackground = card.Background;
-
-                // Highlight on hover
-                card.PointerEntered += (s, e) =>
-                {
-                    card.Background = new SolidColorBrush(Color.FromArgb(0xFF, 0xE0, 0xF0, 0xFF)); // Light blue highlight
-                };
-                card.PointerExited += (s, e) =>
-                {
-                    card.Background = originalBackground;
-                };
-
-                // Show details on click
-                card.Tapped += (s, e) =>
-                {
-                    // You can update detailsCard.Child here with real data if needed
-                    SlideUpDetails();
-                };
-
+                AttachCardAnimations(card, day);
                 panel.Children.Add(card);
             }
 
             return panel;
+        }
+
+        private void AttachCardAnimations(Grid card, ForecastDay day)
+        {
+            Compositor compositor = null;
+            Microsoft.UI.Composition.Visual visual = null;
+
+            card.Loaded += (s, e) =>
+            {
+                visual = ElementCompositionPreview.GetElementVisual(card);
+                compositor = visual.Compositor;
+                visual.CenterPoint = new Vector3(
+                    (float)card.ActualWidth / 2,
+                    (float)card.ActualHeight / 2, 0);
+            };
+
+            card.SizeChanged += (s, e) =>
+            {
+                if (visual != null)
+                    visual.CenterPoint = new Vector3(
+                        (float)e.NewSize.Width / 2,
+                        (float)e.NewSize.Height / 2, 0);
+            };
+
+            card.PointerEntered += (s, e) =>
+            {
+                if (compositor == null) return;
+
+                var scaleAnim = compositor.CreateVector3KeyFrameAnimation();
+                scaleAnim.InsertKeyFrame(1f, new Vector3(1.02f, 1.02f, 1f),
+                    compositor.CreateCubicBezierEasingFunction(
+                        new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
+                scaleAnim.Duration = TimeSpan.FromMilliseconds(200);
+                visual.StartAnimation("Scale", scaleAnim);
+
+                card.Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                    TintOpacity = 0.14,
+                    FallbackColor = Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF)
+                };
+            };
+
+            card.PointerExited += (s, e) =>
+            {
+                if (compositor == null) return;
+
+                var scaleAnim = compositor.CreateVector3KeyFrameAnimation();
+                scaleAnim.InsertKeyFrame(1f, Vector3.One,
+                    compositor.CreateCubicBezierEasingFunction(
+                        new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
+                scaleAnim.Duration = TimeSpan.FromMilliseconds(250);
+                visual.StartAnimation("Scale", scaleAnim);
+
+                card.Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                    TintOpacity = 0.08,
+                    FallbackColor = Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+                };
+            };
+
+            card.PointerPressed += (s, e) =>
+            {
+                if (compositor == null) return;
+                var scaleAnim = compositor.CreateVector3KeyFrameAnimation();
+                scaleAnim.InsertKeyFrame(1f, new Vector3(0.97f, 0.97f, 1f));
+                scaleAnim.Duration = TimeSpan.FromMilliseconds(80);
+                visual.StartAnimation("Scale", scaleAnim);
+            };
+
+            card.PointerReleased += (s, e) =>
+            {
+                if (compositor == null) return;
+                var scaleAnim = compositor.CreateVector3KeyFrameAnimation();
+                scaleAnim.InsertKeyFrame(1f, new Vector3(1.02f, 1.02f, 1f),
+                    compositor.CreateCubicBezierEasingFunction(
+                        new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
+                scaleAnim.Duration = TimeSpan.FromMilliseconds(150);
+                visual.StartAnimation("Scale", scaleAnim);
+            };
+
+            card.Tapped += (s, e) =>
+            {
+                ShowDetails(day);
+                e.Handled = true;
+            };
+        }
+
+        private void BuildOverlay(Grid rootGrid)
+        {
+            overlayPanel = new Grid
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
+                Visibility = Visibility.Collapsed,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                Opacity = 0
+            };
+
+            overlayPanel.Tapped += (s, e) =>
+            {
+                if (e.OriginalSource == overlayPanel)
+                    HideDetails();
+            };
+
+            var cardContent = new StackPanel
+            {
+                Spacing = 14,
+                Margin = new Thickness(28, 12, 28, 28)
+            };
+
+            // Drag handle
+            cardContent.Children.Add(new Grid
+            {
+                Height = 20,
+                Children =
+                {
+                    new Border
+                    {
+                        Height = 4,
+                        Width = 40,
+                        CornerRadius = new CornerRadius(2),
+                        Background = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
+            });
+
+            // Title row with icon
+            var titleRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 12
+            };
+
+            detailsIcon = new TextBlock
+            {
+                FontFamily = WeatherIconsFont,
+                FontSize = 28,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            titleRow.Children.Add(detailsIcon);
+
+            detailsTitle = new TextBlock
+            {
+                FontSize = 24,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Colors.White),
+                VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = DisplayFont
+            };
+            titleRow.Children.Add(detailsTitle);
+            cardContent.Children.Add(titleRow);
+
+            // High / Low
+            detailsHighLow = new TextBlock
+            {
+                FontSize = 17,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
+                FontFamily = TextFont
+            };
+            cardContent.Children.Add(detailsHighLow);
+
+            // Separator
+            cardContent.Children.Add(new Border
+            {
+                Height = 0.5,
+                Background = new SolidColorBrush(Color.FromArgb(0x25, 0xFF, 0xFF, 0xFF)),
+                Margin = new Thickness(0, 2, 0, 2)
+            });
+
+            // 2x2 detail grid
+            var detailsGrid = new Grid();
+            detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var condItem = CreateDetailItem("Condition", out detailsCondValue);
+            Grid.SetRow(condItem, 0); Grid.SetColumn(condItem, 0);
+            detailsGrid.Children.Add(condItem);
+
+            var humidItem = CreateDetailItem("Humidity", out detailsHumidValue);
+            Grid.SetRow(humidItem, 0); Grid.SetColumn(humidItem, 1);
+            detailsGrid.Children.Add(humidItem);
+
+            var windItem = CreateDetailItem("Wind", out detailsWindValue);
+            Grid.SetRow(windItem, 1); Grid.SetColumn(windItem, 0);
+            detailsGrid.Children.Add(windItem);
+
+            var uvItem = CreateDetailItem("UV Index", out detailsUVValue);
+            Grid.SetRow(uvItem, 1); Grid.SetColumn(uvItem, 1);
+            detailsGrid.Children.Add(uvItem);
+
+            cardContent.Children.Add(detailsGrid);
+
+            // Dismiss button
+            var closeBtn = new Button
+            {
+                Content = "Dismiss",
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Height = 40,
+                Margin = new Thickness(0, 8, 0, 0),
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                FontWeight = FontWeights.SemiBold,
+                FontFamily = TextFont,
+                BorderThickness = new Thickness(0)
+            };
+            closeBtn.Click += (s, e) => HideDetails();
+            cardContent.Children.Add(closeBtn);
+
+            detailsCard = new Border
+            {
+                CornerRadius = new CornerRadius(20, 20, 0, 0),
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MaxWidth = 460,
+                MinHeight = 360,
+                RenderTransform = new TranslateTransform { Y = 500 },
+                Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0x14, 0x20, 0x3A),
+                    TintOpacity = 0.85,
+                    FallbackColor = Color.FromArgb(0xF0, 0x1A, 0x2A, 0x48)
+                },
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5, 0.5, 0.5, 0),
+                Child = cardContent
+            };
+
+            overlayPanel.Children.Add(detailsCard);
+            rootGrid.Children.Add(overlayPanel);
+            Grid.SetRowSpan(overlayPanel, 4);
+            Canvas.SetZIndex(overlayPanel, 99);
+        }
+
+        private static StackPanel CreateDetailItem(string label, out TextBlock valueBlock)
+        {
+            var stack = new StackPanel
+            {
+                Spacing = 2,
+                Margin = new Thickness(0, 8, 0, 8)
+            };
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = label.ToUpperInvariant(),
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 60,
+                FontFamily = TextFont
+            });
+
+            valueBlock = new TextBlock
+            {
+                FontSize = 20,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Colors.White),
+                FontFamily = DisplayFont
+            };
+            stack.Children.Add(valueBlock);
+
+            return stack;
+        }
+
+        private void ShowDetails(ForecastDay day)
+        {
+            detailsTitle.Text = day.FullDay;
+            detailsHighLow.Text = $"H:{day.High}   L:{day.Low}";
+            detailsCondValue.Text = day.Desc;
+            detailsHumidValue.Text = day.Humidity;
+            detailsWindValue.Text = day.Wind;
+            detailsUVValue.Text = day.UV;
+            detailsIcon.Text = day.Icon;
+            detailsIcon.Foreground = new SolidColorBrush(day.IconColor);
+
+            overlayPanel.Visibility = Visibility.Visible;
+
+            if (detailsCard.RenderTransform is TranslateTransform tt)
+                tt.Y = detailsCard.MinHeight;
+
+            var fadeIn = new DoubleAnimation
+            {
+                From = 0, To = 1,
+                Duration = new Duration(TimeSpan.FromMilliseconds(250)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            Storyboard.SetTarget(fadeIn, overlayPanel);
+            Storyboard.SetTargetProperty(fadeIn, "Opacity");
+
+            var slideUp = new DoubleAnimation
+            {
+                From = detailsCard.MinHeight, To = 0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(400)),
+                EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.25 }
+            };
+            Storyboard.SetTarget(slideUp, detailsCard.RenderTransform);
+            Storyboard.SetTargetProperty(slideUp, "Y");
+
+            var sb = new Storyboard();
+            sb.Children.Add(fadeIn);
+            sb.Children.Add(slideUp);
+            sb.Begin();
+        }
+
+        private void HideDetails()
+        {
+            double cardH = detailsCard.ActualHeight > 0 ? detailsCard.ActualHeight : detailsCard.MinHeight;
+
+            var fadeOut = new DoubleAnimation
+            {
+                To = 0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(200)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+            Storyboard.SetTarget(fadeOut, overlayPanel);
+            Storyboard.SetTargetProperty(fadeOut, "Opacity");
+
+            var slideDown = new DoubleAnimation
+            {
+                To = cardH,
+                Duration = new Duration(TimeSpan.FromMilliseconds(280)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+            };
+            Storyboard.SetTarget(slideDown, detailsCard.RenderTransform);
+            Storyboard.SetTargetProperty(slideDown, "Y");
+
+            var sb = new Storyboard();
+            sb.Children.Add(fadeOut);
+            sb.Children.Add(slideDown);
+            sb.Completed += (s, e) => overlayPanel.Visibility = Visibility.Collapsed;
+            sb.Begin();
         }
     }
 }
