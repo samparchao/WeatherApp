@@ -548,7 +548,6 @@ namespace WeatherApp
             <meta name="viewport" content="width=device-width,initial-scale=1.0">
             <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
             <style>
             *{margin:0;padding:0}
             body{background:#0D142B;overflow:hidden}
@@ -572,7 +571,7 @@ namespace WeatherApp
                 box-shadow:0 2px 8px rgba(0,0,0,0.3);
             }
             .city-label{
-                font-size:10px;color:rgba(255,255,255,0.55);margin-top:2px;
+                font-size:10px;color:rgba(255,255,255,0.7);margin-top:2px;
                 font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
                 text-shadow:0 1px 3px rgba(0,0,0,0.6);
             }
@@ -602,29 +601,89 @@ namespace WeatherApp
             L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(map);
             L.control.zoom({position:'topright'}).addTo(map);
 
-            var heat=L.heatLayer([
-                [23.4,53.8,1],[25.2,55.3,.95],[24.7,46.7,.98],[30,31.2,.85],
-                [28.6,77.2,.9],[19.1,72.9,.82],[13.1,80.3,.88],[1.3,103.8,.8],
-                [14.6,121,.78],[-6.2,106.8,.75],[3.1,101.7,.77],[13.8,100.5,.8],
-                [21,105.9,.72],[-23.5,-46.6,.6],[-22.9,-43.2,.62],
-                [33.9,-118.2,.55],[25.8,-80.2,.72],[29.8,-95.4,.7],
-                [33.4,-112,.85],[36.2,-115.1,.82],[37.8,-122.4,.48],
-                [35.7,139.7,.55],[37.6,127,.5],[39.9,116.4,.52],[31.2,121.5,.58],
-                [22.3,114.2,.7],[41,29,.6],[40.4,-3.7,.58],[41.4,2.2,.55],
-                [37.9,23.7,.62],[38.7,-9.1,.52],
-                [48.9,2.3,.4],[51.5,-.1,.35],[52.5,13.4,.38],[48.1,11.6,.36],
-                [45.5,9.2,.42],[41.9,12.5,.48],[47.4,8.5,.34],
-                [40.7,-74,.42],[42.4,-71.1,.38],[41.9,-87.6,.4],
-                [43.7,-79.4,.36],[45.5,-73.6,.32],[49.3,-123.1,.32],[47.6,-122.3,.35],
-                [-33.9,151.2,.45],[-37.8,145,.38],[-36.8,174.8,.35],
-                [55.8,37.6,.2],[59.9,30.3,.15],[59.3,18.1,.22],[60.2,24.9,.18],
-                [55.7,12.6,.25],[64.1,-21.9,.1],[69.6,18.9,.05],
-                [61.2,-150,.08],[51.2,-114.1,.2],[53.5,-113.5,.18]
-            ],{radius:35,blur:40,maxZoom:10,max:1,gradient:{
-                0:'#313695',.15:'#4575b4',.3:'#74add1',.4:'#abd9e9',
-                .5:'#e0f3f8',.6:'#fee090',.7:'#fdae61',.8:'#f46d43',
-                .9:'#d73027',1:'#a50026'}}).addTo(map);
+            /* --- colour ramp ------------------------------------------------ */
+            var CS=[
+                {t:-25,r:49,g:54,b:149},{t:-10,r:69,g:117,b:180},
+                {t:0,r:116,g:173,b:209},{t:5,r:171,g:217,b:233},
+                {t:10,r:224,g:243,b:248},{t:15,r:254,g:224,b:144},
+                {t:20,r:253,g:174,b:97},{t:28,r:244,g:109,b:67},
+                {t:35,r:215,g:48,b:39},{t:42,r:165,g:0,b:38}
+            ];
+            function tCol(t){
+                if(t<=CS[0].t)return CS[0];
+                if(t>=CS[CS.length-1].t)return CS[CS.length-1];
+                for(var i=0;i<CS.length-1;i++){
+                    if(t<=CS[i+1].t){
+                        var f=(t-CS[i].t)/(CS[i+1].t-CS[i].t);
+                        return{r:CS[i].r+f*(CS[i+1].r-CS[i].r)|0,
+                               g:CS[i].g+f*(CS[i+1].g-CS[i].g)|0,
+                               b:CS[i].b+f*(CS[i+1].b-CS[i].b)|0};
+                    }
+                }return CS[0];
+            }
 
+            /* --- temperature model ------------------------------------------ */
+            var PI=Math.PI/180;
+            function G(lat,lng,cla,cln,sla,sln){
+                var a=(lat-cla)/sla,b=(lng-cln)/sln;return Math.exp(-(a*a+b*b));
+            }
+            function eTemp(lat,lng){
+                var b=30*Math.cos(lat*PI*1.1)-2;
+                /* hot zones */
+                b+=G(lat,lng,25,20,12,35)*10;   /* Sahara */
+                b+=G(lat,lng,24,48,8,12)*8;     /* Arabian */
+                b+=G(lat,lng,22,78,12,15)*5;    /* India */
+                b+=G(lat,lng,5,110,14,20)*4;    /* SE Asia */
+                b+=G(lat,lng,-25,135,8,12)*5;   /* Oz outback */
+                b+=G(lat,lng,0,-60,18,20)*3;    /* Amazon */
+                b+=G(lat,lng,10,25,12,15)*4;    /* W Africa */
+                b+=G(lat,lng,34,-112,8,12)*4;   /* US SW desert */
+                /* cold zones */
+                b-=G(lat,lng,62,95,12,30)*18;   /* Siberia */
+                b-=G(lat,lng,65,-95,12,25)*15;  /* N Canada */
+                b-=G(lat,lng,72,-42,10,12)*20;  /* Greenland */
+                b-=G(lat,lng,78,20,8,30)*12;    /* Arctic Svalbard */
+                b-=G(lat,lng,-80,0,10,60)*30;   /* Antarctica */
+                b-=G(lat,lng,62,-150,10,15)*12; /* Alaska */
+                /* subtle variation */
+                b+=Math.sin(lat*.17+2.3)*Math.cos(lng*.13+1.7)*2;
+                b+=Math.sin(lat*.31-1.1)*Math.cos(lng*.23+.5)*1.5;
+                return b;
+            }
+
+            /* --- per-pixel temperature tile layer --------------------------- */
+            var TL=L.GridLayer.extend({
+                createTile:function(co){
+                    var ts=this.getTileSize();
+                    var s=2,w=(ts.x/s)|0,h=(ts.y/s)|0;
+                    var sm=document.createElement('canvas');
+                    sm.width=w;sm.height=h;
+                    var ctx=sm.getContext('2d');
+                    var id=ctx.createImageData(w,h),d=id.data;
+                    var nw=this._map.unproject([co.x*ts.x,co.y*ts.y],co.z);
+                    var se=this._map.unproject([(co.x+1)*ts.x,(co.y+1)*ts.y],co.z);
+                    var lt=nw.lat,dlat=(se.lat-lt)/h,ll=nw.lng,dlng=(se.lng-ll)/w;
+                    for(var y=0;y<h;y++){
+                        var la=lt+y*dlat;
+                        for(var x=0;x<w;x++){
+                            var c=tCol(eTemp(la,ll+x*dlng));
+                            var i=(y*w+x)*4;
+                            d[i]=c.r;d[i+1]=c.g;d[i+2]=c.b;d[i+3]=155;
+                        }
+                    }
+                    ctx.putImageData(id,0,0);
+                    var cv=document.createElement('canvas');
+                    cv.width=ts.x;cv.height=ts.y;
+                    var fc=cv.getContext('2d');
+                    fc.imageSmoothingEnabled=true;
+                    fc.imageSmoothingQuality='high';
+                    fc.drawImage(sm,0,0,ts.x,ts.y);
+                    return cv;
+                }
+            });
+            new TL({opacity:0.6}).addTo(map);
+
+            /* --- city temperature markers ----------------------------------- */
             var cities=[
                 {n:'San Francisco',lat:37.8,lng:-122.4,t:23},
                 {n:'New York',lat:40.7,lng:-74,t:18},
@@ -646,6 +705,7 @@ namespace WeatherApp
                     iconSize:[90,42],iconAnchor:[45,21]})}).addTo(map);
             });
 
+            /* --- legend ----------------------------------------------------- */
             var legend=L.control({position:'bottomleft'});
             legend.onAdd=function(){
                 var d=L.DomUtil.create('div','legend');
