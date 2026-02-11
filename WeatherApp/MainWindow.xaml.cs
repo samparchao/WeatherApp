@@ -36,6 +36,12 @@ namespace WeatherApp
         private double currentLatitude;
         private double currentLongitude;
 
+        private TextBlock heroTemp;
+        private TextBlock heroCondIcon;
+        private TextBlock heroCondText;
+        private TextBlock heroHiLo;
+        private ScrollViewer forecastScroll;
+
         private static readonly FontFamily WeatherIconsFont =
             new("ms-appx:///Assets/weathericons-regular-webfont.ttf#Weather Icons");
         private static readonly FontFamily DisplayFont = new("Segoe UI Variable Display");
@@ -45,17 +51,6 @@ namespace WeatherApp
             string Day, string FullDay, string Icon, Color IconColor,
             string High, string Low, string Desc,
             string Humidity, string Wind, string UV);
-
-        private static readonly ForecastDay[] Forecast =
-        [
-            new("Mon", "Monday",    "\uF00D", Color.FromArgb(0xFF,0xFF,0xD4,0x5E), "23°","16°","Sunny",        "45%","8 km/h", "6"),
-            new("Tue", "Tuesday",   "\uF002", Color.FromArgb(0xFF,0xB0,0xBE,0xCE), "21°","15°","Cloudy",       "62%","12 km/h","3"),
-            new("Wed", "Wednesday", "\uF008", Color.FromArgb(0xFF,0x5B,0xC0,0xF8), "19°","14°","Rain",         "78%","18 km/h","2"),
-            new("Thu", "Thursday",  "\uF002", Color.FromArgb(0xFF,0xF0,0xC8,0x5E), "22°","15°","Partly Cloudy","55%","10 km/h","5"),
-            new("Fri", "Friday",    "\uF00D", Color.FromArgb(0xFF,0xFF,0xD4,0x5E), "24°","17°","Sunny",        "40%","6 km/h", "7"),
-            new("Sat", "Saturday",  "\uF009", Color.FromArgb(0xFF,0x5B,0xC0,0xF8), "20°","13°","Showers",      "72%","15 km/h","2"),
-            new("Sun", "Sunday",    "\uF010", Color.FromArgb(0xFF,0xF0,0x78,0x78), "18°","12°","Thunderstorm", "85%","22 km/h","1"),
-        ];
 
         public MainWindow()
         {
@@ -80,7 +75,52 @@ namespace WeatherApp
             catch
             {
                 locationText.Text = "Location unavailable";
+                return;
             }
+
+            try
+            {
+                var weather = await WeatherService.GetWeatherAsync(currentLatitude, currentLongitude);
+                UpdateWeatherUI(weather);
+            }
+            catch
+            {
+                heroCondText.Text = "Weather unavailable";
+            }
+        }
+
+        private void UpdateWeatherUI(WeatherService.WeatherData weather)
+        {
+            var current = weather.Current;
+            heroTemp.Text = $"{current.Temperature:F0}°";
+
+            var (desc, icon, r, g, b) = WeatherService.MapWeatherCode(current.WeatherCode);
+            heroCondIcon.Text = icon;
+            heroCondIcon.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, r, g, b));
+            heroCondText.Text = desc;
+
+            if (weather.Daily.Length > 0)
+            {
+                var today = weather.Daily[0];
+                heroHiLo.Text = $"H:{today.TempMax:F0}°  L:{today.TempMin:F0}°";
+            }
+
+            var forecastDays = new ForecastDay[weather.Daily.Length];
+            for (int i = 0; i < weather.Daily.Length; i++)
+            {
+                var d = weather.Daily[i];
+                var (dayDesc, dayIcon, dr, dg, db) = WeatherService.MapWeatherCode(d.WeatherCode);
+                var dayName = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("ddd");
+                var fullDay = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("dddd");
+
+                forecastDays[i] = new ForecastDay(
+                    dayName, fullDay, dayIcon,
+                    Color.FromArgb(0xFF, dr, dg, db),
+                    $"{d.TempMax:F0}°", $"{d.TempMin:F0}°", dayDesc,
+                    $"{d.Humidity:F0}%", $"{d.WindSpeed:F0} km/h", $"{d.UVIndex:F0}");
+            }
+
+            forecastScroll.Content = CreateForecastPanel(forecastDays);
         }
 
         private void BuildUI()
@@ -145,16 +185,17 @@ namespace WeatherApp
                 Margin = new Thickness(0, 8, 0, 4)
             };
 
-            currentStack.Children.Add(new TextBlock
+            heroTemp = new TextBlock
             {
-                Text = "23°",
+                Text = "\u2014",
                 FontSize = 100,
                 FontWeight = FontWeights.Thin,
                 Foreground = new SolidColorBrush(Colors.White),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontFamily = DisplayFont,
                 Margin = new Thickness(0, -8, 0, -16)
-            });
+            };
+            currentStack.Children.Add(heroTemp);
 
             var condRow = new StackPanel
             {
@@ -163,35 +204,35 @@ namespace WeatherApp
                 Spacing = 8
             };
 
-            condRow.Children.Add(new TextBlock
+            heroCondIcon = new TextBlock
             {
-                Text = "\uF00D",
                 FontFamily = WeatherIconsFont,
                 FontSize = 18,
                 Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xD4, 0x5E)),
                 VerticalAlignment = VerticalAlignment.Center
-            });
+            };
+            condRow.Children.Add(heroCondIcon);
 
-            condRow.Children.Add(new TextBlock
+            heroCondText = new TextBlock
             {
-                Text = "Sunny",
                 FontSize = 18,
                 Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0xFF, 0xFF, 0xFF)),
                 VerticalAlignment = VerticalAlignment.Center,
                 FontFamily = TextFont
-            });
+            };
+            condRow.Children.Add(heroCondText);
 
             currentStack.Children.Add(condRow);
 
-            currentStack.Children.Add(new TextBlock
+            heroHiLo = new TextBlock
             {
-                Text = "H:24°  L:16°",
                 FontSize = 15,
                 Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 4, 0, 0),
                 FontFamily = TextFont
-            });
+            };
+            currentStack.Children.Add(heroHiLo);
 
             Grid.SetRow(currentStack, 1);
             rootGrid.Children.Add(currentStack);
@@ -233,11 +274,11 @@ namespace WeatherApp
             Grid.SetRow(forecastHeader, 0);
             forecastContent.Children.Add(forecastHeader);
 
-            var forecastScroll = new ScrollViewer
+            forecastScroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = CreateForecastPanel()
+                Content = CreateForecastPanel([])
             };
             Grid.SetRow(forecastScroll, 1);
             forecastContent.Children.Add(forecastScroll);
@@ -262,7 +303,7 @@ namespace WeatherApp
             this.Content = rootGrid;
         }
 
-        private StackPanel CreateForecastPanel()
+        private StackPanel CreateForecastPanel(ForecastDay[] forecast)
         {
             var panel = new StackPanel
             {
@@ -270,7 +311,7 @@ namespace WeatherApp
                 Margin = new Thickness(20, 0, 20, 24)
             };
 
-            foreach (var day in Forecast)
+            foreach (var day in forecast)
             {
                 var card = new Grid
                 {
