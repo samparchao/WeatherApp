@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Numerics;
+using System.Threading.Tasks;
 using Windows.UI;
 
 namespace WeatherApp
@@ -30,6 +31,10 @@ namespace WeatherApp
         private Border forecastPill;
         private Border mapPill;
         private bool mapInitialized;
+
+        private TextBlock locationText;
+        private double currentLatitude;
+        private double currentLongitude;
 
         private static readonly FontFamily WeatherIconsFont =
             new("ms-appx:///Assets/weathericons-regular-webfont.ttf#Weather Icons");
@@ -60,6 +65,22 @@ namespace WeatherApp
             this.AppWindow.Resize(new Windows.Graphics.SizeInt32(480, 780));
 
             BuildUI();
+            _ = InitializeLocationAsync();
+        }
+
+        private async Task InitializeLocationAsync()
+        {
+            try
+            {
+                var location = await LocationService.GetCurrentLocationAsync();
+                locationText.Text = location.CityName;
+                currentLatitude = location.Latitude;
+                currentLongitude = location.Longitude;
+            }
+            catch
+            {
+                locationText.Text = "Location unavailable";
+            }
         }
 
         private void BuildUI()
@@ -94,15 +115,16 @@ namespace WeatherApp
                 Spacing = 2
             };
 
-            headerStack.Children.Add(new TextBlock
+            locationText = new TextBlock
             {
-                Text = "San Francisco",
+                Text = "Locating\u2026",
                 FontSize = 34,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Colors.White),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontFamily = DisplayFont
-            });
+            };
+            headerStack.Children.Add(locationText);
 
             headerStack.Children.Add(new TextBlock
             {
