@@ -32,7 +32,10 @@ namespace WeatherApp
         private Grid forecastContent;
         private Border forecastPill;
         private Border mapPill;
+        private Border settingsPill;
         private bool mapInitialized;
+
+        private Grid settingsContent;
 
         private TextBlock locationText;
         private double currentLatitude;
@@ -49,8 +52,36 @@ namespace WeatherApp
         private static readonly FontFamily DisplayFont = new("Segoe UI Variable Display");
         private static readonly FontFamily TextFont = new("Segoe UI Variable Text");
 
+        private WeatherService.WeatherData? currentWeather;
+        private int? selectedDayIndex;
+
+        private TemperatureUnit temperatureUnit = TemperatureUnit.Celsius;
+        private WindSpeedUnit windSpeedUnit = WindSpeedUnit.KilometersPerHour;
+
+        private ToggleSwitch tempUnitToggle;
+        private ToggleSwitch windUnitToggle;
+
+        private enum ActiveTab
+        {
+            Forecast,
+            Map,
+            Settings
+        }
+
+        private enum TemperatureUnit
+        {
+            Celsius,
+            Fahrenheit
+        }
+
+        private enum WindSpeedUnit
+        {
+            KilometersPerHour,
+            MilesPerHour
+        }
+
         private record ForecastDay(
-            string Day, string FullDay, string Icon, Color IconColor,
+            int Index, string Day, string FullDay, string Icon, Color IconColor,
             string High, string Low, string Desc,
             string Humidity, string Wind, string UV);
 
@@ -99,8 +130,14 @@ namespace WeatherApp
 
         private void UpdateWeatherUI(WeatherService.WeatherData weather)
         {
+            currentWeather = weather;
+            ApplyWeatherToUI(weather);
+        }
+
+        private void ApplyWeatherToUI(WeatherService.WeatherData weather)
+        {
             var current = weather.Current;
-            heroTemp.Text = $"{current.Temperature:F0}°";
+            heroTemp.Text = FormatTemperature(current.Temperature);
 
             var (desc, icon, r, g, b) = WeatherService.MapWeatherCode(current.WeatherCode);
             heroCondIcon.Text = icon;
@@ -110,7 +147,7 @@ namespace WeatherApp
             if (weather.Daily.Length > 0)
             {
                 var today = weather.Daily[0];
-                heroHiLo.Text = $"H:{today.TempMax:F0}°  L:{today.TempMin:F0}°";
+                heroHiLo.Text = $"H:{FormatTemperature(today.TempMax)}  L:{FormatTemperature(today.TempMin)}";
             }
 
             var forecastDays = new ForecastDay[weather.Daily.Length];
@@ -122,13 +159,19 @@ namespace WeatherApp
                 var fullDay = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("dddd");
 
                 forecastDays[i] = new ForecastDay(
-                    dayName, fullDay, dayIcon,
+                    i, dayName, fullDay, dayIcon,
                     Color.FromArgb(0xFF, dr, dg, db),
-                    $"{d.TempMax:F0}°", $"{d.TempMin:F0}°", dayDesc,
+                    FormatTemperature(d.TempMax), FormatTemperature(d.TempMin), dayDesc,
                     $"{d.Humidity:F0}%", FormatWind(d.WindSpeed, d.WindDirection), $"{d.UVIndex:F0}");
             }
 
             forecastScroll.Content = CreateForecastPanel(forecastDays);
+
+            if (overlayPanel.Visibility == Visibility.Visible &&
+                selectedDayIndex is int index && index >= 0 && index < forecastDays.Length)
+            {
+                UpdateDetails(forecastDays[index]);
+            }
         }
 
         private void BuildUI()
@@ -302,6 +345,39 @@ namespace WeatherApp
             Grid.SetRow(mapWebView, 1);
             contentArea.Children.Add(mapWebView);
 
+            // Settings view (initially hidden)
+            settingsContent = new Grid
+            {
+                Visibility = Visibility.Collapsed
+            };
+            settingsContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            settingsContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            var settingsHeader = new TextBlock
+            {
+                Text = "SETTINGS",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                Margin = new Thickness(32, 4, 32, 8),
+                CharacterSpacing = 80,
+                FontFamily = TextFont
+            };
+            Grid.SetRow(settingsHeader, 0);
+            settingsContent.Children.Add(settingsHeader);
+
+            var settingsScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = CreateSettingsPanel()
+            };
+            Grid.SetRow(settingsScroll, 1);
+            settingsContent.Children.Add(settingsScroll);
+
+            Grid.SetRow(settingsContent, 1);
+            contentArea.Children.Add(settingsContent);
+
             Grid.SetRow(contentArea, 3);
             rootGrid.Children.Add(contentArea);
 
@@ -410,6 +486,113 @@ namespace WeatherApp
             return panel;
         }
 
+        private StackPanel CreateSettingsPanel()
+        {
+            StackPanel panel = new()
+            {
+                Spacing = 12,
+                Margin = new Thickness(20, 0, 20, 24)
+            };
+
+            panel.Children.Add(CreateSettingsCard(
+                "About",
+                new TextBlock
+                {
+                    Text = "WeatherApp provides a clean look at current conditions and a 7-day outlook.",
+                    FontSize = 14,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont
+                }));
+
+            panel.Children.Add(CreateSettingsCard(
+                "Temperature",
+                CreateUnitToggle("Celsius", "Fahrenheit", isOn =>
+                {
+                    temperatureUnit = isOn ? TemperatureUnit.Fahrenheit : TemperatureUnit.Celsius;
+                    RefreshWeatherUI();
+                }, temperatureUnit == TemperatureUnit.Fahrenheit, out tempUnitToggle)));
+
+            panel.Children.Add(CreateSettingsCard(
+                "Wind Speed",
+                CreateUnitToggle("km/h", "mph", isOn =>
+                {
+                    windSpeedUnit = isOn ? WindSpeedUnit.MilesPerHour : WindSpeedUnit.KilometersPerHour;
+                    RefreshWeatherUI();
+                }, windSpeedUnit == WindSpeedUnit.MilesPerHour, out windUnitToggle)));
+
+            return panel;
+        }
+
+        private Border CreateSettingsCard(string title, UIElement content)
+        {
+            StackPanel stack = new()
+            {
+                Spacing = 8
+            };
+
+            stack.Children.Add(new TextBlock
+            {
+                Text = title.ToUpperInvariant(),
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 60,
+                FontFamily = TextFont
+            });
+
+            stack.Children.Add(content);
+
+            return new Border
+            {
+                Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                    TintOpacity = 0.08,
+                    FallbackColor = Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+                },
+                CornerRadius = new CornerRadius(14),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x15, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5),
+                Padding = new Thickness(16, 12, 16, 12),
+                Child = stack
+            };
+        }
+
+        private Grid CreateUnitToggle(string offLabel, string onLabel, Action<bool> onToggle, bool isOn, out ToggleSwitch toggle)
+        {
+            Grid grid = new();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var label = new TextBlock
+            {
+                Text = $"{offLabel} / {onLabel}",
+                FontSize = 15,
+                Foreground = new SolidColorBrush(Colors.White),
+                VerticalAlignment = VerticalAlignment.Center,
+                FontFamily = DisplayFont
+            };
+            Grid.SetColumn(label, 0);
+            grid.Children.Add(label);
+
+            var localToggle = new ToggleSwitch
+            {
+                OffContent = offLabel,
+                OnContent = onLabel,
+                IsOn = isOn,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                MinWidth = 90
+            };
+            localToggle.Toggled += (s, e) => onToggle(localToggle.IsOn);
+            Grid.SetColumn(localToggle, 1);
+            grid.Children.Add(localToggle);
+
+            toggle = localToggle;
+
+            return grid;
+        }
+
         private void AttachCardAnimations(Grid card, ForecastDay day)
         {
             Compositor compositor = null;
@@ -511,6 +694,7 @@ namespace WeatherApp
             Grid grid = new();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             forecastPill = new Border
             {
@@ -548,21 +732,41 @@ namespace WeatherApp
             Grid.SetColumn(mapPill, 1);
             grid.Children.Add(mapPill);
 
+            settingsPill = new Border
+            {
+                CornerRadius = new CornerRadius(16),
+                Background = new SolidColorBrush(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF)),
+                Padding = new Thickness(18, 7, 18, 7),
+                Child = new TextBlock
+                {
+                    Text = "Settings",
+                    FontSize = 13,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont
+                }
+            };
+            settingsPill.Tapped += (s, e) => { SwitchToSettings(); e.Handled = true; };
+            Grid.SetColumn(settingsPill, 2);
+            grid.Children.Add(settingsPill);
+
             outerBorder.Child = grid;
             return outerBorder;
         }
 
-        private void UpdateTabAppearance(bool isForecast)
+        private void UpdateTabAppearance(ActiveTab activeTab)
         {
-            forecastPill.Background = new SolidColorBrush(
-                isForecast ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF));
-            ((TextBlock)forecastPill.Child).Foreground = new SolidColorBrush(
-                isForecast ? Colors.White : Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF));
+            UpdateTabPill(forecastPill, activeTab == ActiveTab.Forecast);
+            UpdateTabPill(mapPill, activeTab == ActiveTab.Map);
+            UpdateTabPill(settingsPill, activeTab == ActiveTab.Settings);
+        }
 
-            mapPill.Background = new SolidColorBrush(
-                !isForecast ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF));
-            ((TextBlock)mapPill.Child).Foreground = new SolidColorBrush(
-                !isForecast ? Colors.White : Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF));
+        private static void UpdateTabPill(Border pill, bool isActive)
+        {
+            pill.Background = new SolidColorBrush(
+                isActive ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF));
+            ((TextBlock)pill.Child).Foreground = new SolidColorBrush(
+                isActive ? Colors.White : Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF));
         }
 
         private void SwitchToForecast()
@@ -570,8 +774,9 @@ namespace WeatherApp
             if (forecastContent.Visibility == Visibility.Visible) return;
 
             mapWebView.Visibility = Visibility.Collapsed;
+            settingsContent.Visibility = Visibility.Collapsed;
             forecastContent.Visibility = Visibility.Visible;
-            UpdateTabAppearance(true);
+            UpdateTabAppearance(ActiveTab.Forecast);
 
             Visual visual = ElementCompositionPreview.GetElementVisual(forecastContent);
             Compositor compositor = visual.Compositor;
@@ -589,8 +794,9 @@ namespace WeatherApp
             if (mapWebView.Visibility == Visibility.Visible) return;
 
             forecastContent.Visibility = Visibility.Collapsed;
+            settingsContent.Visibility = Visibility.Collapsed;
             mapWebView.Visibility = Visibility.Visible;
-            UpdateTabAppearance(false);
+            UpdateTabAppearance(ActiveTab.Map);
 
             if (!mapInitialized)
             {
@@ -601,6 +807,26 @@ namespace WeatherApp
             }
 
             Visual visual = ElementCompositionPreview.GetElementVisual(mapWebView);
+            Compositor compositor = visual.Compositor;
+
+            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0f, 0f);
+            fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
+            fade.Duration = TimeSpan.FromMilliseconds(300);
+            visual.StartAnimation("Opacity", fade);
+        }
+
+        private void SwitchToSettings()
+        {
+            if (settingsContent.Visibility == Visibility.Visible) return;
+
+            forecastContent.Visibility = Visibility.Collapsed;
+            mapWebView.Visibility = Visibility.Collapsed;
+            settingsContent.Visibility = Visibility.Visible;
+            UpdateTabAppearance(ActiveTab.Settings);
+
+            Visual visual = ElementCompositionPreview.GetElementVisual(settingsContent);
             Compositor compositor = visual.Compositor;
 
             ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
@@ -793,12 +1019,35 @@ namespace WeatherApp
             return stack;
         }
 
-        private static string FormatWind(double speed, double direction)
+        private void RefreshWeatherUI()
+        {
+            if (currentWeather == null)
+            {
+                return;
+            }
+
+            ApplyWeatherToUI(currentWeather);
+        }
+
+        private string FormatWind(double speed, double direction)
         {
             var compass = GetWindDirection(direction);
+            var converted = windSpeedUnit == WindSpeedUnit.MilesPerHour
+                ? speed * 0.621371
+                : speed;
+            var unitLabel = windSpeedUnit == WindSpeedUnit.MilesPerHour ? "mph" : "km/h";
+
             return string.IsNullOrWhiteSpace(compass)
-                ? $"{speed:F0} km/h"
-                : $"{speed:F0} km/h {compass}";
+                ? $"{converted:F0} {unitLabel}"
+                : $"{converted:F0} {unitLabel} {compass}";
+        }
+
+        private string FormatTemperature(double temperature)
+        {
+            var converted = temperatureUnit == TemperatureUnit.Fahrenheit
+                ? (temperature * 9 / 5) + 32
+                : temperature;
+            return $"{converted:F0}°";
         }
 
         private static string GetWindDirection(double degrees)
@@ -823,14 +1072,8 @@ namespace WeatherApp
 
         private void ShowDetails(ForecastDay day)
         {
-            detailsTitle.Text = day.FullDay;
-            detailsHighLow.Text = $"H:{day.High}   L:{day.Low}";
-            detailsCondValue.Text = day.Desc;
-            detailsHumidValue.Text = day.Humidity;
-            detailsWindValue.Text = day.Wind;
-            detailsUVValue.Text = day.UV;
-            detailsIcon.Text = day.Icon;
-            detailsIcon.Foreground = new SolidColorBrush(day.IconColor);
+            selectedDayIndex = day.Index;
+            UpdateDetails(day);
 
             overlayPanel.Visibility = Visibility.Visible;
 
@@ -859,6 +1102,18 @@ namespace WeatherApp
             sb.Children.Add(fadeIn);
             sb.Children.Add(slideUp);
             sb.Begin();
+        }
+
+        private void UpdateDetails(ForecastDay day)
+        {
+            detailsTitle.Text = day.FullDay;
+            detailsHighLow.Text = $"H:{day.High}   L:{day.Low}";
+            detailsCondValue.Text = day.Desc;
+            detailsHumidValue.Text = day.Humidity;
+            detailsWindValue.Text = day.Wind;
+            detailsUVValue.Text = day.UV;
+            detailsIcon.Text = day.Icon;
+            detailsIcon.Foreground = new SolidColorBrush(day.IconColor);
         }
 
         private void HideDetails()
