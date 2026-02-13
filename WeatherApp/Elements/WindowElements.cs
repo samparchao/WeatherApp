@@ -1,4 +1,4 @@
-﻿// Created by Samuel Teixera Parchao
+﻿// Created by Samuel Teixeira Parchao
 // Last modified: 13/02/2026
 
 namespace WeatherApp.Elements;
