@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Windows.Devices.Geolocation;
 
-namespace WeatherApp;
+namespace WeatherApp.Services;
 
 internal sealed class LocationService
 {

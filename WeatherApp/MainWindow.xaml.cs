@@ -9,7 +9,9 @@ using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Numerics;
 using System.Threading.Tasks;
+using WeatherApp.Services;
 using Windows.UI;
+using WeatherApp.Elements;
 
 namespace WeatherApp
 {
@@ -52,6 +54,12 @@ namespace WeatherApp
             string High, string Low, string Desc,
             string Humidity, string Wind, string UV);
 
+        /// <summary>
+        /// Initializes a new instance of the MainWindow class and configures the main application window.
+        /// </summary>
+        /// <remarks>This constructor sets up the window's title, size, and layout, and begins
+        /// asynchronous initialization of location services. It is typically called by the application framework when
+        /// the main window is created.</remarks>
         public MainWindow()
         {
             this.InitializeComponent();
@@ -125,7 +133,7 @@ namespace WeatherApp
 
         private void BuildUI()
         {
-            var rootGrid = new Grid
+            Grid rootGrid = new()
             {
                 Background = new LinearGradientBrush
                 {
@@ -148,7 +156,7 @@ namespace WeatherApp
             rootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             // Location header
-            var headerStack = new StackPanel
+            StackPanel headerStack = new()
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 48, 0, 0),
@@ -197,7 +205,7 @@ namespace WeatherApp
             };
             currentStack.Children.Add(heroTemp);
 
-            var condRow = new StackPanel
+            StackPanel condRow = new()
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -238,7 +246,7 @@ namespace WeatherApp
             rootGrid.Children.Add(currentStack);
 
             // Divider
-            var divider = new Border
+            Border divider = new()
             {
                 Height = 0.5,
                 Margin = new Thickness(28, 20, 28, 0),
@@ -248,11 +256,11 @@ namespace WeatherApp
             rootGrid.Children.Add(divider);
 
             // Content area with tab selector
-            var contentArea = new Grid();
+            Grid contentArea = new();
             contentArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             contentArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            var tabSelector = CreateTabSelector();
+            Border tabSelector = CreateTabSelector();
             Grid.SetRow(tabSelector, 0);
             contentArea.Children.Add(tabSelector);
 
@@ -305,7 +313,7 @@ namespace WeatherApp
 
         private StackPanel CreateForecastPanel(ForecastDay[] forecast)
         {
-            var panel = new StackPanel
+            StackPanel panel = new()
             {
                 Spacing = 6,
                 Margin = new Thickness(20, 0, 20, 24)
@@ -491,7 +499,7 @@ namespace WeatherApp
 
         private Border CreateTabSelector()
         {
-            var outerBorder = new Border
+            Border outerBorder = new()
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 8, 0, 4),
@@ -500,7 +508,7 @@ namespace WeatherApp
                 Padding = new Thickness(4)
             };
 
-            var grid = new Grid();
+            Grid grid = new();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -565,10 +573,10 @@ namespace WeatherApp
             forecastContent.Visibility = Visibility.Visible;
             UpdateTabAppearance(true);
 
-            var visual = ElementCompositionPreview.GetElementVisual(forecastContent);
-            var compositor = visual.Compositor;
+            Visual visual = ElementCompositionPreview.GetElementVisual(forecastContent);
+            Compositor compositor = visual.Compositor;
 
-            var fade = compositor.CreateScalarKeyFrameAnimation();
+            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
             fade.InsertKeyFrame(0f, 0f);
             fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
                 new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
@@ -589,197 +597,19 @@ namespace WeatherApp
                 mapInitialized = true;
                 await mapWebView.EnsureCoreWebView2Async();
                 mapWebView.DefaultBackgroundColor = Color.FromArgb(0xFF, 0x0D, 0x14, 0x2B);
-                mapWebView.NavigateToString(GetMapHtml());
+                mapWebView.NavigateToString(WindowElements.GetMapHtml());
             }
 
-            var visual = ElementCompositionPreview.GetElementVisual(mapWebView);
-            var compositor = visual.Compositor;
+            Visual visual = ElementCompositionPreview.GetElementVisual(mapWebView);
+            Compositor compositor = visual.Compositor;
 
-            var fade = compositor.CreateScalarKeyFrameAnimation();
+            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
             fade.InsertKeyFrame(0f, 0f);
             fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
                 new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
             fade.Duration = TimeSpan.FromMilliseconds(300);
             visual.StartAnimation("Opacity", fade);
         }
-
-        private static string GetMapHtml() => """
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <meta charset="utf-8"/>
-            <meta name="viewport" content="width=device-width,initial-scale=1.0">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-            <style>
-            *{margin:0;padding:0}
-            body{background:#0D142B;overflow:hidden}
-            #map{width:100vw;height:100vh}
-            .leaflet-control-attribution{display:none!important}
-            .leaflet-control-zoom a{
-                background:rgba(20,32,58,0.85)!important;
-                color:rgba(255,255,255,0.8)!important;
-                border-color:rgba(255,255,255,0.12)!important;
-            }
-            .leaflet-control-zoom a:hover{
-                background:rgba(40,55,90,0.9)!important;
-                color:#fff!important;
-            }
-            .temp-marker{text-align:center;pointer-events:none}
-            .temp-pill{
-                display:inline-block;padding:3px 10px;border-radius:12px;
-                color:#fff;font-size:13px;font-weight:600;
-                font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
-                text-shadow:0 1px 2px rgba(0,0,0,0.4);
-                box-shadow:0 2px 8px rgba(0,0,0,0.3);
-            }
-            .city-label{
-                font-size:10px;color:rgba(255,255,255,0.7);margin-top:2px;
-                font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
-                text-shadow:0 1px 3px rgba(0,0,0,0.6);
-            }
-            .legend{
-                background:rgba(20,32,58,0.88)!important;
-                border:0.5px solid rgba(255,255,255,0.12);
-                border-radius:14px;padding:14px 18px;
-                color:#fff;backdrop-filter:blur(20px);
-                font-family:'Segoe UI Variable Text','Segoe UI',sans-serif;
-            }
-            .legend h4{
-                margin:0 0 8px 0;font-size:10px;font-weight:600;
-                text-transform:uppercase;letter-spacing:1.4px;opacity:0.6;
-            }
-            .grad-bar{
-                width:150px;height:6px;border-radius:3px;
-                background:linear-gradient(to right,#313695,#4575b4,#91bfdb,#e0f3f8,#fee090,#fdae61,#f46d43,#d73027,#a50026);
-                margin-bottom:5px;
-            }
-            .grad-labels{display:flex;justify-content:space-between;font-size:9px;opacity:0.5}
-            </style>
-            </head>
-            <body>
-            <div id="map"></div>
-            <script>
-            var map=L.map('map',{center:[25,0],zoom:2,zoomControl:false,attributionControl:false});
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(map);
-            L.control.zoom({position:'topright'}).addTo(map);
-
-            /* --- colour ramp ------------------------------------------------ */
-            var CS=[
-                {t:-25,r:49,g:54,b:149},{t:-10,r:69,g:117,b:180},
-                {t:0,r:116,g:173,b:209},{t:5,r:171,g:217,b:233},
-                {t:10,r:224,g:243,b:248},{t:15,r:254,g:224,b:144},
-                {t:20,r:253,g:174,b:97},{t:28,r:244,g:109,b:67},
-                {t:35,r:215,g:48,b:39},{t:42,r:165,g:0,b:38}
-            ];
-            function tCol(t){
-                if(t<=CS[0].t)return CS[0];
-                if(t>=CS[CS.length-1].t)return CS[CS.length-1];
-                for(var i=0;i<CS.length-1;i++){
-                    if(t<=CS[i+1].t){
-                        var f=(t-CS[i].t)/(CS[i+1].t-CS[i].t);
-                        return{r:CS[i].r+f*(CS[i+1].r-CS[i].r)|0,
-                               g:CS[i].g+f*(CS[i+1].g-CS[i].g)|0,
-                               b:CS[i].b+f*(CS[i+1].b-CS[i].b)|0};
-                    }
-                }return CS[0];
-            }
-
-            /* --- temperature model ------------------------------------------ */
-            var PI=Math.PI/180;
-            function G(lat,lng,cla,cln,sla,sln){
-                var a=(lat-cla)/sla,b=(lng-cln)/sln;return Math.exp(-(a*a+b*b));
-            }
-            function eTemp(lat,lng){
-                var b=30*Math.cos(lat*PI*1.1)-2;
-                /* hot zones */
-                b+=G(lat,lng,25,20,12,35)*10;   /* Sahara */
-                b+=G(lat,lng,24,48,8,12)*8;     /* Arabian */
-                b+=G(lat,lng,22,78,12,15)*5;    /* India */
-                b+=G(lat,lng,5,110,14,20)*4;    /* SE Asia */
-                b+=G(lat,lng,-25,135,8,12)*5;   /* Oz outback */
-                b+=G(lat,lng,0,-60,18,20)*3;    /* Amazon */
-                b+=G(lat,lng,10,25,12,15)*4;    /* W Africa */
-                b+=G(lat,lng,34,-112,8,12)*4;   /* US SW desert */
-                /* cold zones */
-                b-=G(lat,lng,62,95,12,30)*18;   /* Siberia */
-                b-=G(lat,lng,65,-95,12,25)*15;  /* N Canada */
-                b-=G(lat,lng,72,-42,10,12)*20;  /* Greenland */
-                b-=G(lat,lng,78,20,8,30)*12;    /* Arctic Svalbard */
-                b-=G(lat,lng,-80,0,10,60)*30;   /* Antarctica */
-                b-=G(lat,lng,62,-150,10,15)*12; /* Alaska */
-                /* subtle variation */
-                b+=Math.sin(lat*.17+2.3)*Math.cos(lng*.13+1.7)*2;
-                b+=Math.sin(lat*.31-1.1)*Math.cos(lng*.23+.5)*1.5;
-                return b;
-            }
-
-            /* --- per-pixel temperature tile layer --------------------------- */
-            var TL=L.GridLayer.extend({
-                createTile:function(co){
-                    var ts=this.getTileSize();
-                    var s=2,w=(ts.x/s)|0,h=(ts.y/s)|0;
-                    var sm=document.createElement('canvas');
-                    sm.width=w;sm.height=h;
-                    var ctx=sm.getContext('2d');
-                    var id=ctx.createImageData(w,h),d=id.data;
-                    var nw=this._map.unproject([co.x*ts.x,co.y*ts.y],co.z);
-                    var se=this._map.unproject([(co.x+1)*ts.x,(co.y+1)*ts.y],co.z);
-                    var lt=nw.lat,dlat=(se.lat-lt)/h,ll=nw.lng,dlng=(se.lng-ll)/w;
-                    for(var y=0;y<h;y++){
-                        var la=lt+y*dlat;
-                        for(var x=0;x<w;x++){
-                            var c=tCol(eTemp(la,ll+x*dlng));
-                            var i=(y*w+x)*4;
-                            d[i]=c.r;d[i+1]=c.g;d[i+2]=c.b;d[i+3]=155;
-                        }
-                    }
-                    ctx.putImageData(id,0,0);
-                    var cv=document.createElement('canvas');
-                    cv.width=ts.x;cv.height=ts.y;
-                    var fc=cv.getContext('2d');
-                    fc.imageSmoothingEnabled=true;
-                    fc.imageSmoothingQuality='high';
-                    fc.drawImage(sm,0,0,ts.x,ts.y);
-                    return cv;
-                }
-            });
-            new TL({opacity:0.6}).addTo(map);
-
-            /* --- city temperature markers ----------------------------------- */
-            var cities=[
-                {n:'San Francisco',lat:37.8,lng:-122.4,t:23},
-                {n:'New York',lat:40.7,lng:-74,t:18},
-                {n:'London',lat:51.5,lng:-.1,t:14},
-                {n:'Tokyo',lat:35.7,lng:139.7,t:22},
-                {n:'Sydney',lat:-33.9,lng:151.2,t:19},
-                {n:'Dubai',lat:25.2,lng:55.3,t:38},
-                {n:'Moscow',lat:55.8,lng:37.6,t:5},
-                {n:'S\u00e3o Paulo',lat:-23.5,lng:-46.6,t:26},
-                {n:'Cairo',lat:30,lng:31.2,t:34},
-                {n:'Paris',lat:48.9,lng:2.3,t:16},
-                {n:'Mumbai',lat:19.1,lng:72.9,t:32},
-                {n:'Beijing',lat:39.9,lng:116.4,t:20}
-            ];
-            cities.forEach(function(c){
-                var col=c.t>32?'#a50026':c.t>26?'#d73027':c.t>20?'#f46d43':c.t>14?'#fdae61':c.t>8?'#abd9e9':c.t>0?'#74add1':'#4575b4';
-                L.marker([c.lat,c.lng],{icon:L.divIcon({className:'temp-marker',
-                    html:'<div class="temp-pill" style="background:'+col+'">'+c.t+'\u00b0</div><div class="city-label">'+c.n+'</div>',
-                    iconSize:[90,42],iconAnchor:[45,21]})}).addTo(map);
-            });
-
-            /* --- legend ----------------------------------------------------- */
-            var legend=L.control({position:'bottomleft'});
-            legend.onAdd=function(){
-                var d=L.DomUtil.create('div','legend');
-                d.innerHTML='<h4>Temperature</h4><div class="grad-bar"></div><div class="grad-labels"><span>-10\u00b0</span><span>10\u00b0</span><span>25\u00b0</span><span>40\u00b0+</span></div>';
-                return d;
-            };
-            legend.addTo(map);
-            </script>
-            </body>
-            </html>
-            """;
 
         private void BuildOverlay(Grid rootGrid)
         {
@@ -867,32 +697,32 @@ namespace WeatherApp
             });
 
             // 2x2 detail grid
-            var detailsGrid = new Grid();
+            Grid detailsGrid = new();
             detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-            var condItem = CreateDetailItem("Condition", out detailsCondValue);
+            StackPanel condItem = CreateDetailItem("Condition", out detailsCondValue);
             Grid.SetRow(condItem, 0); Grid.SetColumn(condItem, 0);
             detailsGrid.Children.Add(condItem);
 
-            var humidItem = CreateDetailItem("Humidity", out detailsHumidValue);
+            StackPanel humidItem = CreateDetailItem("Humidity", out detailsHumidValue);
             Grid.SetRow(humidItem, 0); Grid.SetColumn(humidItem, 1);
             detailsGrid.Children.Add(humidItem);
 
-            var windItem = CreateDetailItem("Wind", out detailsWindValue);
+            StackPanel windItem = CreateDetailItem("Wind", out detailsWindValue);
             Grid.SetRow(windItem, 1); Grid.SetColumn(windItem, 0);
             detailsGrid.Children.Add(windItem);
 
-            var uvItem = CreateDetailItem("UV Index", out detailsUVValue);
+            StackPanel uvItem = CreateDetailItem("UV Index", out detailsUVValue);
             Grid.SetRow(uvItem, 1); Grid.SetColumn(uvItem, 1);
             detailsGrid.Children.Add(uvItem);
 
             cardContent.Children.Add(detailsGrid);
 
             // Dismiss button
-            var closeBtn = new Button
+            Button closeBtn = new()
             {
                 Content = "Dismiss",
                 HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -935,7 +765,7 @@ namespace WeatherApp
 
         private static StackPanel CreateDetailItem(string label, out TextBlock valueBlock)
         {
-            var stack = new StackPanel
+            StackPanel stack = new()
             {
                 Spacing = 2,
                 Margin = new Thickness(0, 8, 0, 8)
@@ -979,7 +809,7 @@ namespace WeatherApp
             if (detailsCard.RenderTransform is TranslateTransform tt)
                 tt.Y = detailsCard.MinHeight;
 
-            var fadeIn = new DoubleAnimation
+            DoubleAnimation fadeIn = new()
             {
                 From = 0, To = 1,
                 Duration = new Duration(TimeSpan.FromMilliseconds(250)),
@@ -988,7 +818,7 @@ namespace WeatherApp
             Storyboard.SetTarget(fadeIn, overlayPanel);
             Storyboard.SetTargetProperty(fadeIn, "Opacity");
 
-            var slideUp = new DoubleAnimation
+            DoubleAnimation slideUp = new()
             {
                 From = detailsCard.MinHeight, To = 0,
                 Duration = new Duration(TimeSpan.FromMilliseconds(400)),
@@ -997,7 +827,7 @@ namespace WeatherApp
             Storyboard.SetTarget(slideUp, detailsCard.RenderTransform);
             Storyboard.SetTargetProperty(slideUp, "Y");
 
-            var sb = new Storyboard();
+            Storyboard sb = new();
             sb.Children.Add(fadeIn);
             sb.Children.Add(slideUp);
             sb.Begin();
@@ -1007,7 +837,7 @@ namespace WeatherApp
         {
             double cardH = detailsCard.ActualHeight > 0 ? detailsCard.ActualHeight : detailsCard.MinHeight;
 
-            var fadeOut = new DoubleAnimation
+            DoubleAnimation fadeOut = new()
             {
                 To = 0,
                 Duration = new Duration(TimeSpan.FromMilliseconds(200)),
@@ -1016,7 +846,7 @@ namespace WeatherApp
             Storyboard.SetTarget(fadeOut, overlayPanel);
             Storyboard.SetTargetProperty(fadeOut, "Opacity");
 
-            var slideDown = new DoubleAnimation
+            DoubleAnimation slideDown = new()
             {
                 To = cardH,
                 Duration = new Duration(TimeSpan.FromMilliseconds(280)),
@@ -1025,7 +855,7 @@ namespace WeatherApp
             Storyboard.SetTarget(slideDown, detailsCard.RenderTransform);
             Storyboard.SetTargetProperty(slideDown, "Y");
 
-            var sb = new Storyboard();
+            Storyboard sb = new();
             sb.Children.Add(fadeOut);
             sb.Children.Add(slideDown);
             sb.Completed += (s, e) => overlayPanel.Visibility = Visibility.Collapsed;

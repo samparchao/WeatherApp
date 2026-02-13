@@ -20,6 +20,19 @@ internal sealed class WeatherService
 
     public record WeatherData(CurrentWeather Current, DailyForecast[] Daily);
 
+    /// <summary>
+    /// Asynchronously retrieves current and 7-day weather forecast data for the specified geographic coordinates.
+    /// </summary>
+    /// <remarks>This method uses the Open-Meteo API to obtain weather information, including temperature,
+    /// humidity, weather code, wind speed, and UV index. The returned data includes both current conditions and a 7-day
+    /// forecast. The method throws an exception if the HTTP request fails or if the response cannot be
+    /// parsed.</remarks>
+    /// <param name="latitude">The latitude of the location for which to retrieve weather data, in decimal degrees. Valid values are between
+    /// -90 and 90.</param>
+    /// <param name="longitude">The longitude of the location for which to retrieve weather data, in decimal degrees. Valid values are between
+    /// -180 and 180.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains a WeatherData object with current
+    /// conditions and daily forecasts for the specified location.</returns>
     public static async Task<WeatherData> GetWeatherAsync(double latitude, double longitude)
     {
         var url = FormattableString.Invariant(
