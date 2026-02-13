@@ -1,7 +1,8 @@
-﻿using Microsoft.UI.Xaml;
+﻿// Created by Samuel Teixera Parchao
+// Last modified: 13/02/2026
 
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+using Microsoft.UI.Xaml;
+
 
 namespace WeatherApp
 {
@@ -12,6 +13,11 @@ namespace WeatherApp
     {
         private Window m_window;
 
+        /// <summary>
+        /// Initializes a new instance of the App class.
+        /// </summary>
+        /// <remarks>This constructor sets up the application's components and prepares it for execution.
+        /// Typically called by the framework when the application starts.</remarks>
         public App()
         {
             this.InitializeComponent();

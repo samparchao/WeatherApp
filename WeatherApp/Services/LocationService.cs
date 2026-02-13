@@ -1,3 +1,5 @@
+// Created by Samuel Teixera Parchao
+// Last modified: 13/02/2026
 using System;
 using System.Net.Http;
 using System.Text.Json;

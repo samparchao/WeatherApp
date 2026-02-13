@@ -1,3 +1,5 @@
+// Created by Samuel Teixera Parchao
+// Last modified: 13/02/2026
 using System;
 using System.Globalization;
 using System.Net.Http;
@@ -10,10 +12,32 @@ internal sealed class WeatherService
 {
     private static readonly HttpClient Http = new();
 
+    /// <summary>
+    /// Represents the current weather conditions at a specific location, including temperature, weather code, humidity,
+    /// wind speed, and UV index.
+    /// </summary>
+    /// <param name="Temperature">The current air temperature, in degrees Celsius.</param>
+    /// <param name="WeatherCode">The code indicating the current weather condition. Refer to the weather service documentation for possible
+    /// values.</param>
+    /// <param name="Humidity">The current relative humidity, as a percentage value between 0 and 100.</param>
+    /// <param name="WindSpeed">The current wind speed, in meters per second.</param>
+    /// <param name="UVIndex">The current ultraviolet (UV) index, indicating the level of UV radiation.</param>
     public record CurrentWeather(
         double Temperature, int WeatherCode, double Humidity,
         double WindSpeed, double UVIndex);
 
+    /// <summary>
+    /// Represents the daily weather forecast for a specific date, including temperature, humidity, wind speed, and UV
+    /// index information.
+    /// </summary>
+    /// <param name="Date">The date for which the forecast applies.</param>
+    /// <param name="WeatherCode">The code indicating the general weather condition for the day. The value corresponds to a predefined set of
+    /// weather types.</param>
+    /// <param name="TempMax">The maximum temperature, in degrees Celsius, expected for the day.</param>
+    /// <param name="TempMin">The minimum temperature, in degrees Celsius, expected for the day.</param>
+    /// <param name="Humidity">The average relative humidity, as a percentage, forecasted for the day.</param>
+    /// <param name="WindSpeed">The average wind speed, in meters per second, forecasted for the day.</param>
+    /// <param name="UVIndex">The maximum UV index expected for the day. Higher values indicate greater risk from sun exposure.</param>
     public record DailyForecast(
         DateTime Date, int WeatherCode, double TempMax, double TempMin,
         double Humidity, double WindSpeed, double UVIndex);
@@ -80,6 +104,16 @@ internal sealed class WeatherService
         return new WeatherData(current, forecasts);
     }
 
+    /// <summary>
+    /// Maps a weather condition code to its corresponding description, icon, and representative color.
+    /// </summary>
+    /// <remarks>The returned icon uses Unicode glyphs commonly found in weather font sets. The RGB values can
+    /// be used for UI theming or visualization. If the code is not recognized, the method returns a generic "Unknown"
+    /// description and icon.</remarks>
+    /// <param name="code">The weather condition code to map. Valid codes correspond to standard meteorological values; values outside the
+    /// defined set will return "Unknown".</param>
+    /// <returns>A tuple containing the weather description, icon Unicode string, and RGB color components representing the
+    /// condition.</returns>
     public static (string Desc, string Icon, byte R, byte G, byte B) MapWeatherCode(int code) => code switch
     {
         0 => ("Clear Sky", "\uF00D", 0xFF, 0xD4, 0x5E),
