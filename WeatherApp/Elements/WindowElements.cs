@@ -12,7 +12,15 @@ namespace WeatherApp.Elements;
 /// libraries.</remarks>
 public class WindowElements
 {
-
+    /// <summary>
+    /// Generates an HTML document containing an interactive world map with temperature visualization and city markers.
+    /// </summary>
+    /// <remarks>The returned HTML is designed to be used as the content of a web page or an embedded browser
+    /// control. It requires internet access to load external Leaflet resources. The map displays estimated temperatures
+    /// across the globe, with color gradients and city-specific temperature markers. No parameters are required, and
+    /// the method does not modify any application state.</remarks>
+    /// <returns>A string containing the complete HTML markup for a map page. The HTML includes embedded JavaScript and CSS for
+    /// rendering a temperature heatmap, city temperature markers, and a legend using the Leaflet library.</returns>
     public static string GetMapHtml()
     {
         return """
