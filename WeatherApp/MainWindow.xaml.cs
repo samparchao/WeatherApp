@@ -125,7 +125,7 @@ namespace WeatherApp
                     dayName, fullDay, dayIcon,
                     Color.FromArgb(0xFF, dr, dg, db),
                     $"{d.TempMax:F0}°", $"{d.TempMin:F0}°", dayDesc,
-                    $"{d.Humidity:F0}%", $"{d.WindSpeed:F0} km/h", $"{d.UVIndex:F0}");
+                    $"{d.Humidity:F0}%", FormatWind(d.WindSpeed, d.WindDirection), $"{d.UVIndex:F0}");
             }
 
             forecastScroll.Content = CreateForecastPanel(forecastDays);
@@ -791,6 +791,34 @@ namespace WeatherApp
             stack.Children.Add(valueBlock);
 
             return stack;
+        }
+
+        private static string FormatWind(double speed, double direction)
+        {
+            var compass = GetWindDirection(direction);
+            return string.IsNullOrWhiteSpace(compass)
+                ? $"{speed:F0} km/h"
+                : $"{speed:F0} km/h {compass}";
+        }
+
+        private static string GetWindDirection(double degrees)
+        {
+            if (double.IsNaN(degrees) || double.IsInfinity(degrees))
+            {
+                return string.Empty;
+            }
+
+            var normalized = (degrees % 360 + 360) % 360;
+            string[] directions =
+            [
+                "N", "NNE", "NE", "ENE",
+                "E", "ESE", "SE", "SSE",
+                "S", "SSW", "SW", "WSW",
+                "W", "WNW", "NW", "NNW"
+            ];
+
+            var index = (int)Math.Round(normalized / 22.5, MidpointRounding.AwayFromZero) % directions.Length;
+            return directions[index];
         }
 
         private void ShowDetails(ForecastDay day)

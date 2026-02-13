@@ -21,10 +21,11 @@ internal sealed class WeatherService
     /// values.</param>
     /// <param name="Humidity">The current relative humidity, as a percentage value between 0 and 100.</param>
     /// <param name="WindSpeed">The current wind speed, in meters per second.</param>
+    /// <param name="WindDirection">The current wind direction, in degrees.</param>
     /// <param name="UVIndex">The current ultraviolet (UV) index, indicating the level of UV radiation.</param>
     public record CurrentWeather(
         double Temperature, int WeatherCode, double Humidity,
-        double WindSpeed, double UVIndex);
+        double WindSpeed, double WindDirection, double UVIndex);
 
     /// <summary>
     /// Represents the daily weather forecast for a specific date, including temperature, humidity, wind speed, and UV
@@ -37,10 +38,11 @@ internal sealed class WeatherService
     /// <param name="TempMin">The minimum temperature, in degrees Celsius, expected for the day.</param>
     /// <param name="Humidity">The average relative humidity, as a percentage, forecasted for the day.</param>
     /// <param name="WindSpeed">The average wind speed, in meters per second, forecasted for the day.</param>
+    /// <param name="WindDirection">The dominant wind direction for the day, in degrees.</param>
     /// <param name="UVIndex">The maximum UV index expected for the day. Higher values indicate greater risk from sun exposure.</param>
     public record DailyForecast(
         DateTime Date, int WeatherCode, double TempMax, double TempMin,
-        double Humidity, double WindSpeed, double UVIndex);
+        double Humidity, double WindSpeed, double WindDirection, double UVIndex);
 
     public record WeatherData(CurrentWeather Current, DailyForecast[] Daily);
 
@@ -60,7 +62,7 @@ internal sealed class WeatherService
     public static async Task<WeatherData> GetWeatherAsync(double latitude, double longitude)
     {
         var url = FormattableString.Invariant(
-            $"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,wind_speed_10m_max,uv_index_max&timezone=auto&forecast_days=7");
+            $"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max&timezone=auto&forecast_days=7");
 
         using var response = await Http.GetAsync(url);
         response.EnsureSuccessStatusCode();
@@ -76,6 +78,7 @@ internal sealed class WeatherService
             cur.GetProperty("weather_code").GetInt32(),
             cur.GetProperty("relative_humidity_2m").GetDouble(),
             cur.GetProperty("wind_speed_10m").GetDouble(),
+            cur.GetProperty("wind_direction_10m").GetDouble(),
             cur.GetProperty("uv_index").GetDouble());
 
         var daily = root.GetProperty("daily");
@@ -85,6 +88,7 @@ internal sealed class WeatherService
         var minT = daily.GetProperty("temperature_2m_min");
         var hum = daily.GetProperty("relative_humidity_2m_max");
         var wind = daily.GetProperty("wind_speed_10m_max");
+        var windDir = daily.GetProperty("wind_direction_10m_dominant");
         var uv = daily.GetProperty("uv_index_max");
 
         var count = times.GetArrayLength();
@@ -98,6 +102,7 @@ internal sealed class WeatherService
                 minT[i].GetDouble(),
                 hum[i].GetDouble(),
                 wind[i].GetDouble(),
+                windDir[i].GetDouble(),
                 uv[i].GetDouble());
         }
 
