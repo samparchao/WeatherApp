@@ -7,12 +7,15 @@ using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
+using System.Diagnostics;
+using Drawing = System.Drawing;
 using System.Numerics;
 using System.Threading.Tasks;
 using WeatherApp.Services;
 using Windows.UI;
 using Windows.Storage;
 using WeatherApp.Elements;
+using Microsoft.UI.Windowing;
 
 namespace WeatherApp
 {
@@ -65,6 +68,9 @@ namespace WeatherApp
         private const string TemperatureUnitSettingKey = "TemperatureUnit";
         private const string WindSpeedUnitSettingKey = "WindSpeedUnit";
 
+        private TrayIcon trayIcon;
+        private bool allowClose;
+
         private enum ActiveTab
         {
             Forecast,
@@ -104,6 +110,7 @@ namespace WeatherApp
 
             LoadSettings();
             BuildUI();
+            InitializeTrayIcon();
             _ = InitializeLocationAsync();
         }
 
@@ -1004,6 +1011,67 @@ namespace WeatherApp
             rootGrid.Children.Add(overlayPanel);
             Grid.SetRowSpan(overlayPanel, 4);
             Canvas.SetZIndex(overlayPanel, 99);
+        }
+
+        private void InitializeTrayIcon()
+        {
+            trayIcon = new TrayIcon
+            {
+                Icon = LoadTrayIcon(),
+                ToolTipText = "Weather"
+            };
+
+            trayIcon.MenuItems.Add(new TrayMenuItem("Open", ShowFromTray));
+            trayIcon.MenuItems.Add(new TrayMenuItem("Quit", QuitFromTray));
+
+            trayIcon.LeftClick += (_, _) => ShowFromTray();
+
+            this.AppWindow.Closing += OnAppWindowClosing;
+        }
+
+        private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (allowClose)
+            {
+                return;
+            }
+
+            args.Cancel = true;
+            sender.Hide();
+        }
+
+        private void ShowFromTray()
+        {
+            AppWindow.Show();
+            Activate();
+        }
+
+        private void QuitFromTray()
+        {
+            allowClose = true;
+
+            if (trayIcon != null)
+            {
+                trayIcon.Dispose();
+                trayIcon = null;
+            }
+
+            Close();
+        }
+
+        private static Drawing.Icon LoadTrayIcon()
+        {
+            var path = Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                var icon = Drawing.Icon.ExtractAssociatedIcon(path);
+                if (icon != null)
+                {
+                    return icon;
+                }
+            }
+
+            return Drawing.SystemIcons.Application;
         }
 
         private static StackPanel CreateDetailItem(string label, out TextBlock valueBlock)
