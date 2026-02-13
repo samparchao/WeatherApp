@@ -11,6 +11,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using WeatherApp.Services;
 using Windows.UI;
+using Windows.Storage;
 using WeatherApp.Elements;
 
 namespace WeatherApp
@@ -61,6 +62,9 @@ namespace WeatherApp
         private ToggleSwitch tempUnitToggle;
         private ToggleSwitch windUnitToggle;
 
+        private const string TemperatureUnitSettingKey = "TemperatureUnit";
+        private const string WindSpeedUnitSettingKey = "WindSpeedUnit";
+
         private enum ActiveTab
         {
             Forecast,
@@ -98,6 +102,7 @@ namespace WeatherApp
             this.ExtendsContentIntoTitleBar = true;
             this.AppWindow.Resize(new Windows.Graphics.SizeInt32(480, 780));
 
+            LoadSettings();
             BuildUI();
             _ = InitializeLocationAsync();
         }
@@ -498,7 +503,7 @@ namespace WeatherApp
                 "About",
                 new TextBlock
                 {
-                    Text = "WeatherApp provides a clean look at current conditions and a 7-day outlook.",
+                    Text = AppInfo.AboutText,
                     FontSize = 14,
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = new SolidColorBrush(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF)),
@@ -510,6 +515,7 @@ namespace WeatherApp
                 CreateUnitToggle("Celsius", "Fahrenheit", isOn =>
                 {
                     temperatureUnit = isOn ? TemperatureUnit.Fahrenheit : TemperatureUnit.Celsius;
+                    SaveSettings();
                     RefreshWeatherUI();
                 }, temperatureUnit == TemperatureUnit.Fahrenheit, out tempUnitToggle)));
 
@@ -518,8 +524,19 @@ namespace WeatherApp
                 CreateUnitToggle("km/h", "mph", isOn =>
                 {
                     windSpeedUnit = isOn ? WindSpeedUnit.MilesPerHour : WindSpeedUnit.KilometersPerHour;
+                    SaveSettings();
                     RefreshWeatherUI();
                 }, windSpeedUnit == WindSpeedUnit.MilesPerHour, out windUnitToggle)));
+
+            panel.Children.Add(CreateSettingsCard(
+                "Version",
+                new TextBlock
+                {
+                    Text = AppInfo.Version,
+                    FontSize = 15,
+                    Foreground = new SolidColorBrush(Colors.White),
+                    FontFamily = DisplayFont
+                }));
 
             return panel;
         }
@@ -1028,6 +1045,33 @@ namespace WeatherApp
 
             ApplyWeatherToUI(currentWeather);
         }
+
+        private void LoadSettings()
+        {
+            var settings = ApplicationData.Current.LocalSettings.Values;
+
+            if (settings.TryGetValue(TemperatureUnitSettingKey, out var tempValue) &&
+                tempValue is string tempString &&
+                Enum.TryParse(tempString, out TemperatureUnit storedTempUnit))
+            {
+                temperatureUnit = storedTempUnit;
+            }
+
+            if (settings.TryGetValue(WindSpeedUnitSettingKey, out var windValue) &&
+                windValue is string windString &&
+                Enum.TryParse(windString, out WindSpeedUnit storedWindUnit))
+            {
+                windSpeedUnit = storedWindUnit;
+            }
+        }
+
+        private void SaveSettings()
+        {
+            var settings = ApplicationData.Current.LocalSettings.Values;
+            settings[TemperatureUnitSettingKey] = temperatureUnit.ToString();
+            settings[WindSpeedUnitSettingKey] = windSpeedUnit.ToString();
+        }
+
 
         private string FormatWind(double speed, double direction)
         {
