@@ -107,6 +107,7 @@ namespace WeatherApp
             this.Title = "Weather";
             this.ExtendsContentIntoTitleBar = true;
             this.AppWindow.Resize(new Windows.Graphics.SizeInt32(480, 780));
+            PositionWindowBottomRight();
 
             LoadSettings();
             BuildUI();
@@ -1042,8 +1043,21 @@ namespace WeatherApp
 
         private void ShowFromTray()
         {
+            PositionWindowBottomRight();
             AppWindow.Show();
             Activate();
+        }
+
+        private void PositionWindowBottomRight()
+        {
+            var displayArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+            var workArea = displayArea.WorkArea;
+            var size = AppWindow.Size;
+
+            var x = Math.Max(workArea.X, workArea.X + workArea.Width - size.Width);
+            var y = Math.Max(workArea.Y, workArea.Y + workArea.Height - size.Height);
+
+            AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
         }
 
         private void QuitFromTray()
