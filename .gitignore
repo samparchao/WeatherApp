@@ -1,1 +1,4 @@
 /.vs
+/WeatherApp/bin
+/WeatherApp/obj
+WeatherApp/obj
