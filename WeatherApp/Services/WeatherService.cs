@@ -61,18 +61,18 @@ internal sealed class WeatherService
     /// conditions and daily forecasts for the specified location.</returns>
     public static async Task<WeatherData> GetWeatherAsync(double latitude, double longitude)
     {
-        var url = FormattableString.Invariant(
+        String url = FormattableString.Invariant(
             $"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,uv_index&daily=weather_code,temperature_2m_max,temperature_2m_min,relative_humidity_2m_max,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max&timezone=auto&forecast_days=7");
 
-        using var response = await Http.GetAsync(url);
+        using HttpResponseMessage response = await Http.GetAsync(url);
         response.EnsureSuccessStatusCode();
 
-        using var doc = await JsonDocument.ParseAsync(
+        using JsonDocument doc = await JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync());
 
-        var root = doc.RootElement;
+        JsonElement root = doc.RootElement;
 
-        var cur = root.GetProperty("current");
+        JsonElement cur = root.GetProperty("current");
         var current = new CurrentWeather(
             cur.GetProperty("temperature_2m").GetDouble(),
             cur.GetProperty("weather_code").GetInt32(),
@@ -81,18 +81,18 @@ internal sealed class WeatherService
             cur.GetProperty("wind_direction_10m").GetDouble(),
             cur.GetProperty("uv_index").GetDouble());
 
-        var daily = root.GetProperty("daily");
-        var times = daily.GetProperty("time");
-        var codes = daily.GetProperty("weather_code");
-        var maxT = daily.GetProperty("temperature_2m_max");
-        var minT = daily.GetProperty("temperature_2m_min");
-        var hum = daily.GetProperty("relative_humidity_2m_max");
-        var wind = daily.GetProperty("wind_speed_10m_max");
-        var windDir = daily.GetProperty("wind_direction_10m_dominant");
-        var uv = daily.GetProperty("uv_index_max");
+        JsonElement daily = root.GetProperty("daily");
+        JsonElement times = daily.GetProperty("time");
+        JsonElement codes = daily.GetProperty("weather_code");
+        JsonElement maxT = daily.GetProperty("temperature_2m_max");
+        JsonElement minT = daily.GetProperty("temperature_2m_min");
+        JsonElement hum = daily.GetProperty("relative_humidity_2m_max");
+        JsonElement wind = daily.GetProperty("wind_speed_10m_max");
+        JsonElement windDir = daily.GetProperty("wind_direction_10m_dominant");
+        JsonElement uv = daily.GetProperty("uv_index_max");
 
-        var count = times.GetArrayLength();
-        var forecasts = new DailyForecast[count];
+        Int32 count = times.GetArrayLength();
+        DailyForecast[] forecasts = new DailyForecast[count];
         for (int i = 0; i < count; i++)
         {
             forecasts[i] = new DailyForecast(
