@@ -34,16 +34,16 @@ internal sealed class LocationService
     /// location access is denied, the result contains default coordinates and an error message.</returns>
     public static async Task<LocationResult> GetCurrentLocationAsync()
     {
-        var status = await Geolocator.RequestAccessAsync();
+        GeolocationAccessStatus status = await Geolocator.RequestAccessAsync();
         if (status != GeolocationAccessStatus.Allowed)
             return new LocationResult("Location denied", 0, 0);
 
-        var geolocator = new Geolocator { DesiredAccuracyInMeters = 1000 };
-        var position = await geolocator.GetGeopositionAsync();
-        var lat = position.Coordinate.Point.Position.Latitude;
-        var lon = position.Coordinate.Point.Position.Longitude;
+        Geolocator geolocator = new Geolocator { DesiredAccuracyInMeters = 1000 };
+        Geoposition position = await geolocator.GetGeopositionAsync();
+        Double lat = position.Coordinate.Point.Position.Latitude;
+        Double lon = position.Coordinate.Point.Position.Longitude;
 
-        var cityName = await ReverseGeocodeAsync(lat, lon);
+        String cityName = await ReverseGeocodeAsync(lat, lon);
         return new LocationResult(cityName, lat, lon);
     }
 
@@ -51,26 +51,26 @@ internal sealed class LocationService
     {
         try
         {
-            var url = FormattableString.Invariant(
+            String url = FormattableString.Invariant(
                 $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&accept-language=en");
 
-            using var response = await Http.GetAsync(url);
+            using HttpResponseMessage response = await Http.GetAsync(url);
             response.EnsureSuccessStatusCode();
 
-            using var doc = await JsonDocument.ParseAsync(
+            using JsonDocument doc = await JsonDocument.ParseAsync(
                 await response.Content.ReadAsStreamAsync());
 
-            var address = doc.RootElement.GetProperty("address");
+            JsonElement address = doc.RootElement.GetProperty("address");
 
-            if (address.TryGetProperty("city", out var city))
+            if (address.TryGetProperty("city", out JsonElement city))
                 return city.GetString()!;
-            if (address.TryGetProperty("town", out var town))
+            if (address.TryGetProperty("town", out JsonElement town))
                 return town.GetString()!;
-            if (address.TryGetProperty("village", out var village))
+            if (address.TryGetProperty("village", out JsonElement village))
                 return village.GetString()!;
-            if (address.TryGetProperty("county", out var county))
+            if (address.TryGetProperty("county", out JsonElement county))
                 return county.GetString()!;
-            if (address.TryGetProperty("state", out var state))
+            if (address.TryGetProperty("state", out JsonElement state))
                 return state.GetString()!;
 
             return doc.RootElement.GetProperty("display_name")

@@ -16,6 +16,8 @@ using Windows.UI;
 using Windows.Storage;
 using WeatherApp.Elements;
 using Microsoft.UI.Windowing;
+using Windows.Graphics;
+using Windows.Foundation.Collections;
 
 namespace WeatherApp
 {
@@ -119,7 +121,7 @@ namespace WeatherApp
         {
             try
             {
-                var location = await LocationService.GetCurrentLocationAsync();
+                LocationService.LocationResult location = await LocationService.GetCurrentLocationAsync();
                 locationText.Text = location.CityName;
                 currentLatitude = location.Latitude;
                 currentLongitude = location.Longitude;
@@ -132,7 +134,7 @@ namespace WeatherApp
 
             try
             {
-                var weather = await WeatherService.GetWeatherAsync(currentLatitude, currentLongitude);
+                WeatherService.WeatherData weather = await WeatherService.GetWeatherAsync(currentLatitude, currentLongitude);
                 UpdateWeatherUI(weather);
             }
             catch
@@ -149,7 +151,7 @@ namespace WeatherApp
 
         private void ApplyWeatherToUI(WeatherService.WeatherData weather)
         {
-            var current = weather.Current;
+            WeatherService.CurrentWeather current = weather.Current;
             heroTemp.Text = FormatTemperature(current.Temperature);
 
             var (desc, icon, r, g, b) = WeatherService.MapWeatherCode(current.WeatherCode);
@@ -159,7 +161,7 @@ namespace WeatherApp
 
             if (weather.Daily.Length > 0)
             {
-                var today = weather.Daily[0];
+                WeatherService.DailyForecast today = weather.Daily[0];
                 heroHiLo.Text = $"H:{FormatTemperature(today.TempMax)}  L:{FormatTemperature(today.TempMin)}";
             }
 
@@ -243,7 +245,7 @@ namespace WeatherApp
             rootGrid.Children.Add(headerStack);
 
             // Current weather hero
-            var currentStack = new StackPanel
+            StackPanel currentStack = new()
             {
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 8, 0, 4)
@@ -325,7 +327,7 @@ namespace WeatherApp
             forecastContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             forecastContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            var forecastHeader = new TextBlock
+            TextBlock forecastHeader = new()
             {
                 Text = "7-DAY FORECAST",
                 FontSize = 12,
@@ -366,7 +368,7 @@ namespace WeatherApp
             settingsContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             settingsContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            var settingsHeader = new TextBlock
+            TextBlock settingsHeader = new()
             {
                 Text = "SETTINGS",
                 FontSize = 12,
@@ -379,7 +381,7 @@ namespace WeatherApp
             Grid.SetRow(settingsHeader, 0);
             settingsContent.Children.Add(settingsHeader);
 
-            var settingsScroll = new ScrollViewer
+            ScrollViewer settingsScroll = new()
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
@@ -410,7 +412,7 @@ namespace WeatherApp
 
             foreach (var day in forecast)
             {
-                var card = new Grid
+                Grid card = new()
                 {
                     Height = 60,
                     Padding = new Thickness(16, 0, 16, 0),
@@ -431,7 +433,7 @@ namespace WeatherApp
                 card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
                 card.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
 
-                var dayText = new TextBlock
+                TextBlock dayText = new()
                 {
                     Text = day.Day,
                     FontSize = 16,
@@ -443,7 +445,7 @@ namespace WeatherApp
                 Grid.SetColumn(dayText, 0);
                 card.Children.Add(dayText);
 
-                var icon = new TextBlock
+                TextBlock icon = new()
                 {
                     Text = day.Icon,
                     FontFamily = WeatherIconsFont,
@@ -455,7 +457,7 @@ namespace WeatherApp
                 Grid.SetColumn(icon, 1);
                 card.Children.Add(icon);
 
-                var desc = new TextBlock
+                TextBlock desc = new()
                 {
                     Text = day.Desc,
                     FontSize = 14,
@@ -467,7 +469,7 @@ namespace WeatherApp
                 Grid.SetColumn(desc, 2);
                 card.Children.Add(desc);
 
-                var high = new TextBlock
+                TextBlock high = new()
                 {
                     Text = day.High,
                     FontSize = 16,
@@ -480,7 +482,7 @@ namespace WeatherApp
                 Grid.SetColumn(high, 3);
                 card.Children.Add(high);
 
-                var low = new TextBlock
+                TextBlock low = new()
                 {
                     Text = day.Low,
                     FontSize = 16,
@@ -590,7 +592,7 @@ namespace WeatherApp
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var label = new TextBlock
+            TextBlock label = new()
             {
                 Text = $"{offLabel} / {onLabel}",
                 FontSize = 15,
@@ -601,7 +603,7 @@ namespace WeatherApp
             Grid.SetColumn(label, 0);
             grid.Children.Add(label);
 
-            var localToggle = new ToggleSwitch
+            ToggleSwitch localToggle = new()
             {
                 OffContent = offLabel,
                 OnContent = onLabel,
@@ -879,7 +881,7 @@ namespace WeatherApp
                     HideDetails();
             };
 
-            var cardContent = new StackPanel
+            StackPanel cardContent = new StackPanel
             {
                 Spacing = 14,
                 Margin = new Thickness(28, 12, 28, 28)
@@ -904,7 +906,7 @@ namespace WeatherApp
             });
 
             // Title row with icon
-            var titleRow = new StackPanel
+            StackPanel titleRow = new()
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 12
@@ -1050,12 +1052,12 @@ namespace WeatherApp
 
         private void PositionWindowBottomRight()
         {
-            var displayArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-            var workArea = displayArea.WorkArea;
-            var size = AppWindow.Size;
+            DisplayArea displayArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
+            RectInt32 workArea = displayArea.WorkArea;
+            SizeInt32 size = AppWindow.Size;
 
-            var x = Math.Max(workArea.X, workArea.X + workArea.Width - size.Width);
-            var y = Math.Max(workArea.Y, workArea.Y + workArea.Height - size.Height);
+            Int32 x = Math.Max(workArea.X, workArea.X + workArea.Width - size.Width);
+            Int32 y = Math.Max(workArea.Y, workArea.Y + workArea.Height - size.Height);
 
             AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
         }
@@ -1075,7 +1077,7 @@ namespace WeatherApp
 
         private static Drawing.Icon LoadTrayIcon()
         {
-            var path = Process.GetCurrentProcess().MainModule?.FileName;
+            String path = Process.GetCurrentProcess().MainModule?.FileName;
             if (!string.IsNullOrWhiteSpace(path))
             {
                 var icon = Drawing.Icon.ExtractAssociatedIcon(path);
@@ -1130,16 +1132,16 @@ namespace WeatherApp
 
         private void LoadSettings()
         {
-            var settings = ApplicationData.Current.LocalSettings.Values;
+            IPropertySet settings = ApplicationData.Current.LocalSettings.Values;
 
-            if (settings.TryGetValue(TemperatureUnitSettingKey, out var tempValue) &&
+            if (settings.TryGetValue(TemperatureUnitSettingKey, out Object tempValue) &&
                 tempValue is string tempString &&
                 Enum.TryParse(tempString, out TemperatureUnit storedTempUnit))
             {
                 temperatureUnit = storedTempUnit;
             }
 
-            if (settings.TryGetValue(WindSpeedUnitSettingKey, out var windValue) &&
+            if (settings.TryGetValue(WindSpeedUnitSettingKey, out Object windValue) &&
                 windValue is string windString &&
                 Enum.TryParse(windString, out WindSpeedUnit storedWindUnit))
             {
@@ -1149,7 +1151,7 @@ namespace WeatherApp
 
         private void SaveSettings()
         {
-            var settings = ApplicationData.Current.LocalSettings.Values;
+            IPropertySet settings = ApplicationData.Current.LocalSettings.Values;
             settings[TemperatureUnitSettingKey] = temperatureUnit.ToString();
             settings[WindSpeedUnitSettingKey] = windSpeedUnit.ToString();
         }
@@ -1157,11 +1159,11 @@ namespace WeatherApp
 
         private string FormatWind(double speed, double direction)
         {
-            var compass = GetWindDirection(direction);
-            var converted = windSpeedUnit == WindSpeedUnit.MilesPerHour
+            String compass = GetWindDirection(direction);
+            Double converted = windSpeedUnit == WindSpeedUnit.MilesPerHour
                 ? speed * 0.621371
                 : speed;
-            var unitLabel = windSpeedUnit == WindSpeedUnit.MilesPerHour ? "mph" : "km/h";
+            String unitLabel = windSpeedUnit == WindSpeedUnit.MilesPerHour ? "mph" : "km/h";
 
             return string.IsNullOrWhiteSpace(compass)
                 ? $"{converted:F0} {unitLabel}"
@@ -1170,7 +1172,7 @@ namespace WeatherApp
 
         private string FormatTemperature(double temperature)
         {
-            var converted = temperatureUnit == TemperatureUnit.Fahrenheit
+            Double converted = temperatureUnit == TemperatureUnit.Fahrenheit
                 ? (temperature * 9 / 5) + 32
                 : temperature;
             return $"{converted:F0}°";
@@ -1183,7 +1185,7 @@ namespace WeatherApp
                 return string.Empty;
             }
 
-            var normalized = (degrees % 360 + 360) % 360;
+            Double normalized = (degrees % 360 + 360) % 360;
             string[] directions =
             [
                 "N", "NNE", "NE", "ENE",
@@ -1192,7 +1194,7 @@ namespace WeatherApp
                 "W", "WNW", "NW", "NNW"
             ];
 
-            var index = (int)Math.Round(normalized / 22.5, MidpointRounding.AwayFromZero) % directions.Length;
+            Int32 index = (int)Math.Round(normalized / 22.5, MidpointRounding.AwayFromZero) % directions.Length;
             return directions[index];
         }
 
