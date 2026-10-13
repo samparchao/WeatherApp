@@ -1462,7 +1462,11 @@ namespace WeatherApp
                     temperature));
             }
 
-            String payload = JsonSerializer.Serialize(mapCities);
+            JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+            String payload = JsonSerializer.Serialize(mapCities, jsonOptions);
             String script = $"window.setTrackedCities({payload});";
             await mapWebView.CoreWebView2.ExecuteScriptAsync(script);
         }

@@ -31,7 +31,13 @@ internal sealed class LocationService
     /// <param name="DisplayName">Expanded location label including country or region.</param>
     /// <param name="Latitude">Latitude in decimal degrees.</param>
     /// <param name="Longitude">Longitude in decimal degrees.</param>
-    public record CitySearchResult(string CityName, string DisplayName, double Latitude, double Longitude);
+    public record CitySearchResult(string CityName, string DisplayName, double Latitude, double Longitude)
+    {
+        public override string ToString()
+        {
+            return DisplayName;
+        }
+    }
 
     /// <summary>
     /// Asynchronously retrieves the device's current geographic location, including latitude, longitude, and the
