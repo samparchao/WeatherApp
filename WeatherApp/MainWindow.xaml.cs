@@ -39,6 +39,19 @@ namespace WeatherApp
         private TextBlock detailsHumidValue;
         private TextBlock detailsWindValue;
         private TextBlock detailsUVValue;
+        private TextBlock detailsCloudValue;
+        private TextBlock detailsSunriseValue;
+        private TextBlock detailsSunsetValue;
+        private TextBlock detailsGoldenHourValue;
+        private TextBlock detailsBlueHourValue;
+        private TextBlock detailsFeelsLikeValue;
+        private TextBlock detailsDewPointValue;
+        private TextBlock detailsPressureTrendValue;
+        private TextBlock detailsAqiValue;
+        private TextBlock detailsRainWindowValue;
+        private StackPanel detailsTemperatureTimelinePanel;
+        private StackPanel detailsGustTimelinePanel;
+        private StackPanel detailsRainTimelinePanel;
         private TextBlock detailsIcon;
 
         private WebView2 mapWebView;
@@ -116,10 +129,34 @@ namespace WeatherApp
             MilesPerHour
         }
 
+        private record HourlyRainPoint(string HourLabel, double ProbabilityPercent, double AmountMillimeters);
+
+        private record HourlyMetricPoint(string HourLabel, double Value);
+
         private record ForecastDay(
-            int Index, string Day, string FullDay, string Icon, Color IconColor,
-            string High, string Low, string Desc,
-            string Humidity, string Wind, string UV);
+            int Index,
+            string Day,
+            string FullDay,
+            string Icon,
+            Color IconColor,
+            string High,
+            string Low,
+            string Desc,
+            string Humidity,
+            string Wind,
+            string UV,
+            string CloudCover,
+            string RainWindow,
+            string FeelsLike,
+            string DewPoint,
+            string PressureTrend,
+            string AirQuality,
+            DateTime Sunrise,
+            DateTime Sunset,
+            string Daylight,
+            HourlyRainPoint[] HourlyRain,
+            HourlyMetricPoint[] HourlyTemperature,
+            HourlyMetricPoint[] HourlyWindGust);
 
         private record TrackedCity(string Name, double Latitude, double Longitude, bool IsFavorite);
 
@@ -348,19 +385,147 @@ namespace WeatherApp
                 heroHiLo.Text = $"H:{FormatTemperature(today.TempMax)}  L:{FormatTemperature(today.TempMin)}";
             }
 
-            var forecastDays = new ForecastDay[weather.Daily.Length];
-            for (int i = 0; i < weather.Daily.Length; i++)
+            ForecastDay[] forecastDays = new ForecastDay[weather.Daily.Length];
+            for (Int32 i = 0; i < weather.Daily.Length; i++)
             {
-                var d = weather.Daily[i];
-                var (dayDesc, dayIcon, dr, dg, db) = WeatherService.MapWeatherCode(d.WeatherCode);
-                var dayName = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("ddd");
-                var fullDay = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("dddd");
+                WeatherService.DailyForecast d = weather.Daily[i];
+                (String dayDesc, String dayIcon, Byte dr, Byte dg, Byte db) = WeatherService.MapWeatherCode(d.WeatherCode);
+                String dayName = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("ddd");
+                String fullDay = d.Date.Date == DateTime.Today ? "Today" : d.Date.ToString("dddd");
+
+                List<HourlyRainPoint> rainPoints = new List<HourlyRainPoint>();
+                List<HourlyMetricPoint> temperaturePoints = new List<HourlyMetricPoint>();
+                List<HourlyMetricPoint> gustPoints = new List<HourlyMetricPoint>();
+                List<Double> pressureValues = new List<Double>();
+                List<Int32> aqiValues = new List<Int32>();
+
+                Double cloudCoverTotal = 0;
+                Double feelsLikeTotal = 0;
+                Double dewPointTotal = 0;
+                Int32 weatherSamples = 0;
+
+                DateTime? rainStart = null;
+                DateTime? rainEnd = null;
+
+                foreach (WeatherService.HourlyForecast hourly in weather.Hourly)
+                {
+                    if (hourly.Time.Date != d.Date.Date)
+                    {
+                        continue;
+                    }
+
+                    String hourLabel = hourly.Time.ToString("HH:mm");
+                    rainPoints.Add(new HourlyRainPoint(
+                        hourLabel,
+                        hourly.PrecipitationProbability,
+                        hourly.Precipitation));
+
+                    temperaturePoints.Add(new HourlyMetricPoint(hourLabel, hourly.Temperature));
+                    gustPoints.Add(new HourlyMetricPoint(hourLabel, hourly.WindGust));
+                    pressureValues.Add(hourly.SurfacePressure);
+
+                    if (hourly.AirQualityIndex.HasValue)
+                    {
+                        aqiValues.Add(hourly.AirQualityIndex.Value);
+                    }
+
+                    if (hourly.PrecipitationProbability >= 40 || hourly.Precipitation >= 0.2)
+                    {
+                        if (rainStart == null)
+                        {
+                            rainStart = hourly.Time;
+                        }
+
+                        rainEnd = hourly.Time;
+                    }
+
+                    cloudCoverTotal += hourly.CloudCover;
+                    feelsLikeTotal += hourly.ApparentTemperature;
+                    dewPointTotal += hourly.DewPoint;
+                    weatherSamples++;
+                }
+
+                String cloudCoverageText = weatherSamples == 0
+                    ? "--"
+                    : $"{Math.Round(cloudCoverTotal / weatherSamples):F0}%";
+
+                String rainWindowText = "No significant rain expected";
+                if (rainStart != null && rainEnd != null)
+                {
+                    rainWindowText = rainStart == rainEnd
+                        ? $"Rain likely near {rainStart:HH:mm}"
+                        : $"Rain likely {rainStart:HH:mm} - {rainEnd:HH:mm}";
+                }
+
+                String feelsLikeText = weatherSamples == 0
+                    ? "--"
+                    : FormatTemperature(feelsLikeTotal / weatherSamples);
+
+                String dewPointText = weatherSamples == 0
+                    ? "--"
+                    : FormatTemperature(dewPointTotal / weatherSamples);
+
+                String pressureTrendText = "Stable";
+                if (pressureValues.Count >= 2)
+                {
+                    Double pressureDelta = pressureValues[^1] - pressureValues[0];
+                    if (pressureDelta > 1.5)
+                    {
+                        pressureTrendText = $"Rising (+{pressureDelta:F1} hPa)";
+                    }
+                    else if (pressureDelta < -1.5)
+                    {
+                        pressureTrendText = $"Falling ({pressureDelta:F1} hPa)";
+                    }
+                    else
+                    {
+                        pressureTrendText = $"Stable ({pressureDelta:+0.0;-0.0;0.0} hPa)";
+                    }
+                }
+
+                String airQualityText;
+                if (aqiValues.Count == 0)
+                {
+                    airQualityText = "AQI unavailable";
+                }
+                else
+                {
+                    Double avgAqi = 0;
+                    foreach (Int32 value in aqiValues)
+                    {
+                        avgAqi += value;
+                    }
+
+                    avgAqi /= aqiValues.Count;
+                    airQualityText = DescribeAirQuality((Int32)Math.Round(avgAqi));
+                }
+
+                String daylightText = $"{d.DaylightDurationHours:F1}h";
 
                 forecastDays[i] = new ForecastDay(
-                    i, dayName, fullDay, dayIcon,
+                    i,
+                    dayName,
+                    fullDay,
+                    dayIcon,
                     Color.FromArgb(0xFF, dr, dg, db),
-                    FormatTemperature(d.TempMax), FormatTemperature(d.TempMin), dayDesc,
-                    $"{d.Humidity:F0}%", FormatWind(d.WindSpeed, d.WindDirection), $"{d.UVIndex:F0}");
+                    FormatTemperature(d.TempMax),
+                    FormatTemperature(d.TempMin),
+                    dayDesc,
+                    $"{d.Humidity:F0}%",
+                    FormatWind(d.WindSpeed, d.WindDirection),
+                    $"{d.UVIndex:F0}",
+                    cloudCoverageText,
+                    rainWindowText,
+                    feelsLikeText,
+                    dewPointText,
+                    pressureTrendText,
+                    airQualityText,
+                    d.Sunrise,
+                    d.Sunset,
+                    daylightText,
+                    rainPoints.ToArray(),
+                    temperaturePoints.ToArray(),
+                    gustPoints.ToArray());
             }
 
             forecastScroll.Content = CreateForecastPanel(forecastDays);
@@ -790,6 +955,21 @@ namespace WeatherApp
                 Spacing = 12,
                 Margin = new Thickness(20, 0, 20, 24)
             };
+
+            Button astroButton = new Button
+            {
+                Content = "Open Astro Targets",
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Height = 38,
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x36, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5),
+                FontFamily = TextFont
+            };
+            astroButton.Click += OnOpenAstroTargetsClick;
+            panel.Children.Add(CreateSettingsCard("Astronomy", astroButton));
 
             panel.Children.Add(CreateSettingsCard(
                 "About",
@@ -1430,6 +1610,18 @@ namespace WeatherApp
             {
                 cityListStack.Children.Add(CreateCityListRow(item));
             }
+
+            cityListStack.Children.Add(new TextBlock
+            {
+                Text = "SETTINGS",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 80,
+                FontFamily = TextFont,
+                Margin = new Thickness(12, 16, 12, 6)
+            });
+            cityListStack.Children.Add(CreateSettingsPanel());
         }
 
         private Button CreateCityListRow(CityPickerItem item)
@@ -2072,10 +2264,11 @@ namespace WeatherApp
                 Margin = new Thickness(0, 2, 0, 2)
             });
 
-            // 2x2 detail grid
+            // Detail grid
             Grid detailsGrid = new();
             detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             detailsGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             detailsGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -2095,7 +2288,156 @@ namespace WeatherApp
             Grid.SetRow(uvItem, 1); Grid.SetColumn(uvItem, 1);
             detailsGrid.Children.Add(uvItem);
 
+            StackPanel cloudItem = CreateDetailItem("Cloud Cover", out detailsCloudValue);
+            Grid.SetRow(cloudItem, 2); Grid.SetColumn(cloudItem, 0);
+            Grid.SetColumnSpan(cloudItem, 2);
+            detailsGrid.Children.Add(cloudItem);
+
             cardContent.Children.Add(detailsGrid);
+
+            Grid sunGrid = new Grid
+            {
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            sunGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            sunGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            sunGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            sunGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            StackPanel sunriseItem = CreateDetailItem("Sunrise", out detailsSunriseValue);
+            Grid.SetRow(sunriseItem, 0); Grid.SetColumn(sunriseItem, 0);
+            sunGrid.Children.Add(sunriseItem);
+
+            StackPanel sunsetItem = CreateDetailItem("Sunset", out detailsSunsetValue);
+            Grid.SetRow(sunsetItem, 0); Grid.SetColumn(sunsetItem, 1);
+            sunGrid.Children.Add(sunsetItem);
+
+            StackPanel goldenHourItem = CreateDetailItem("Golden Hour", out detailsGoldenHourValue);
+            Grid.SetRow(goldenHourItem, 1); Grid.SetColumn(goldenHourItem, 0);
+            sunGrid.Children.Add(goldenHourItem);
+
+            StackPanel blueHourItem = CreateDetailItem("Blue Hour", out detailsBlueHourValue);
+            Grid.SetRow(blueHourItem, 1); Grid.SetColumn(blueHourItem, 1);
+            sunGrid.Children.Add(blueHourItem);
+
+            cardContent.Children.Add(sunGrid);
+
+            Grid comfortGrid = new Grid
+            {
+                Margin = new Thickness(0, 4, 0, 0)
+            };
+            comfortGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            comfortGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            comfortGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            comfortGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            comfortGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            StackPanel feelsLikeItem = CreateDetailItem("Feels Like", out detailsFeelsLikeValue);
+            Grid.SetRow(feelsLikeItem, 0); Grid.SetColumn(feelsLikeItem, 0);
+            comfortGrid.Children.Add(feelsLikeItem);
+
+            StackPanel dewPointItem = CreateDetailItem("Dew Point", out detailsDewPointValue);
+            Grid.SetRow(dewPointItem, 0); Grid.SetColumn(dewPointItem, 1);
+            comfortGrid.Children.Add(dewPointItem);
+
+            StackPanel pressureItem = CreateDetailItem("Pressure Trend", out detailsPressureTrendValue);
+            Grid.SetRow(pressureItem, 1); Grid.SetColumn(pressureItem, 0);
+            comfortGrid.Children.Add(pressureItem);
+
+            StackPanel aqiItem = CreateDetailItem("Air Quality", out detailsAqiValue);
+            Grid.SetRow(aqiItem, 1); Grid.SetColumn(aqiItem, 1);
+            comfortGrid.Children.Add(aqiItem);
+
+            StackPanel rainWindowItem = CreateDetailItem("Rain Window", out detailsRainWindowValue);
+            Grid.SetRow(rainWindowItem, 2); Grid.SetColumn(rainWindowItem, 0);
+            Grid.SetColumnSpan(rainWindowItem, 2);
+            comfortGrid.Children.Add(rainWindowItem);
+
+            cardContent.Children.Add(comfortGrid);
+
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = "HOURLY TEMPERATURE",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 60,
+                FontFamily = TextFont,
+                Margin = new Thickness(0, 6, 0, 2)
+            });
+
+            detailsTemperatureTimelinePanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10
+            };
+
+            ScrollViewer temperatureScroll = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollMode = ScrollMode.Disabled,
+                Content = detailsTemperatureTimelinePanel,
+                MinHeight = 124
+            };
+            cardContent.Children.Add(temperatureScroll);
+
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = "WIND GUSTS",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 60,
+                FontFamily = TextFont,
+                Margin = new Thickness(0, 6, 0, 2)
+            });
+
+            detailsGustTimelinePanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10
+            };
+
+            ScrollViewer gustScroll = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollMode = ScrollMode.Disabled,
+                Content = detailsGustTimelinePanel,
+                MinHeight = 124
+            };
+            cardContent.Children.Add(gustScroll);
+
+            cardContent.Children.Add(new TextBlock
+            {
+                Text = "HOURLY RAIN",
+                FontSize = 11,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                CharacterSpacing = 60,
+                FontFamily = TextFont,
+                Margin = new Thickness(0, 6, 0, 2)
+            });
+
+            detailsRainTimelinePanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10
+            };
+
+            ScrollViewer rainScroll = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollMode = ScrollMode.Disabled,
+                Content = detailsRainTimelinePanel,
+                MinHeight = 122
+            };
+            cardContent.Children.Add(rainScroll);
 
             Button astroBtn = new()
             {
@@ -2136,13 +2478,24 @@ namespace WeatherApp
             closeBtn.Click += (s, e) => HideDetails();
             cardContent.Children.Add(closeBtn);
 
+            ScrollViewer detailsScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollMode = ScrollMode.Enabled,
+                HorizontalScrollMode = ScrollMode.Disabled,
+                Content = cardContent
+            };
+
             detailsCard = new Border
             {
                 CornerRadius = new CornerRadius(20, 20, 0, 0),
                 VerticalAlignment = VerticalAlignment.Bottom,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 MaxWidth = 460,
-                MinHeight = 360,
+                MaxHeight = 520,
+                MinHeight = 300,
+                Margin = new Thickness(0, 48, 0, 0),
                 RenderTransform = new TranslateTransform { Y = 500 },
                 Background = new AcrylicBrush
                 {
@@ -2152,7 +2505,7 @@ namespace WeatherApp
                 },
                 BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
                 BorderThickness = new Thickness(0.5, 0.5, 0.5, 0),
-                Child = cardContent
+                Child = detailsScroll
             };
 
             overlayPanel.Children.Add(detailsCard);
@@ -2360,6 +2713,20 @@ namespace WeatherApp
                 $"{Math.Round(latitude, 4):F4}|{Math.Round(longitude, 4):F4}");
         }
 
+        private static string DescribeAirQuality(Int32 aqi)
+        {
+            String category = aqi switch
+            {
+                <= 50 => "Good",
+                <= 100 => "Moderate",
+                <= 150 => "Unhealthy (Sensitive)",
+                <= 200 => "Unhealthy",
+                <= 300 => "Very Unhealthy",
+                _ => "Hazardous"
+            };
+
+            return $"{aqi} ({category})";
+        }
 
         private string FormatWind(double speed, double direction)
         {
@@ -2444,8 +2811,177 @@ namespace WeatherApp
             detailsHumidValue.Text = day.Humidity;
             detailsWindValue.Text = day.Wind;
             detailsUVValue.Text = day.UV;
+            detailsCloudValue.Text = day.CloudCover;
+            detailsSunriseValue.Text = day.Sunrise.ToString("HH:mm");
+            detailsSunsetValue.Text = day.Sunset.ToString("HH:mm");
+            detailsGoldenHourValue.Text = $"{day.Sunrise.AddMinutes(-30):HH:mm} - {day.Sunrise.AddMinutes(60):HH:mm}";
+            detailsBlueHourValue.Text = $"{day.Sunset.AddMinutes(-50):HH:mm} - {day.Sunset.AddMinutes(-10):HH:mm}";
+            detailsFeelsLikeValue.Text = day.FeelsLike;
+            detailsDewPointValue.Text = day.DewPoint;
+            detailsPressureTrendValue.Text = day.PressureTrend;
+            detailsAqiValue.Text = day.AirQuality;
+            detailsRainWindowValue.Text = day.RainWindow;
             detailsIcon.Text = day.Icon;
             detailsIcon.Foreground = new SolidColorBrush(day.IconColor);
+            RenderHourlyMetricTimeline(detailsTemperatureTimelinePanel, day.HourlyTemperature, 0xFF, 0xF2, 0xA4, isTemperature: true);
+            RenderHourlyMetricTimeline(detailsGustTimelinePanel, day.HourlyWindGust, 0x8E, 0xD7, 0xFF, isTemperature: false);
+            RenderHourlyRainTimeline(day.HourlyRain);
+        }
+
+        private void RenderHourlyMetricTimeline(StackPanel targetPanel, HourlyMetricPoint[] points, Byte red, Byte green, Byte blue, Boolean isTemperature)
+        {
+            if (targetPanel == null)
+            {
+                return;
+            }
+
+            targetPanel.Children.Clear();
+
+            if (points == null || points.Length == 0)
+            {
+                targetPanel.Children.Add(new TextBlock
+                {
+                    Text = "No hourly data.",
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    FontSize = 12,
+                    Margin = new Thickness(4, 8, 0, 0)
+                });
+                return;
+            }
+
+            Int32 sampledCount = Math.Min(12, points.Length);
+            Int32 step = Math.Max(1, points.Length / sampledCount);
+
+            Double minValue = Double.MaxValue;
+            Double maxValue = Double.MinValue;
+            for (Int32 i = 0; i < points.Length; i++)
+            {
+                minValue = Math.Min(minValue, points[i].Value);
+                maxValue = Math.Max(maxValue, points[i].Value);
+            }
+
+            Double span = Math.Max(0.1, maxValue - minValue);
+
+            for (Int32 i = 0; i < points.Length; i += step)
+            {
+                HourlyMetricPoint point = points[i];
+                Double normalized = (point.Value - minValue) / span;
+                Double barHeight = 8 + normalized * 52;
+
+                StackPanel column = new StackPanel
+                {
+                    Width = 40,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Spacing = 4
+                };
+
+                column.Children.Add(new TextBlock
+                {
+                    Text = point.HourLabel,
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x85, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                Border bar = new Border
+                {
+                    Height = barHeight,
+                    Width = 20,
+                    CornerRadius = new CornerRadius(6),
+                    Background = new SolidColorBrush(Color.FromArgb(0xC8, red, green, blue)),
+                    VerticalAlignment = VerticalAlignment.Bottom
+                };
+                column.Children.Add(bar);
+
+                String valueText = isTemperature
+                    ? FormatTemperature(point.Value)
+                    : $"{point.Value:F0}";
+
+                column.Children.Add(new TextBlock
+                {
+                    Text = valueText,
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                targetPanel.Children.Add(column);
+            }
+        }
+
+        private void RenderHourlyRainTimeline(HourlyRainPoint[] rainPoints)
+        {
+            if (detailsRainTimelinePanel == null)
+            {
+                return;
+            }
+
+            detailsRainTimelinePanel.Children.Clear();
+
+            if (rainPoints == null || rainPoints.Length == 0)
+            {
+                detailsRainTimelinePanel.Children.Add(new TextBlock
+                {
+                    Text = "No hourly precipitation data.",
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    FontSize = 12,
+                    Margin = new Thickness(4, 8, 0, 0)
+                });
+                return;
+            }
+
+            Int32 sampledCount = Math.Min(12, rainPoints.Length);
+            Int32 step = Math.Max(1, rainPoints.Length / sampledCount);
+
+            for (Int32 i = 0; i < rainPoints.Length; i += step)
+            {
+                HourlyRainPoint point = rainPoints[i];
+                Double clampedProbability = Math.Clamp(point.ProbabilityPercent, 0, 100);
+                Double barHeight = 8 + (clampedProbability / 100.0) * 52;
+
+                StackPanel column = new StackPanel
+                {
+                    Width = 36,
+                    VerticalAlignment = VerticalAlignment.Bottom,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    Spacing = 4
+                };
+
+                column.Children.Add(new TextBlock
+                {
+                    Text = point.HourLabel,
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x85, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                Border bar = new Border
+                {
+                    Height = barHeight,
+                    Width = 20,
+                    CornerRadius = new CornerRadius(6),
+                    Background = new SolidColorBrush(Color.FromArgb(0xC8, 0x6B, 0xB9, 0xFF)),
+                    VerticalAlignment = VerticalAlignment.Bottom
+                };
+                column.Children.Add(bar);
+
+                column.Children.Add(new TextBlock
+                {
+                    Text = $"{clampedProbability:F0}%",
+                    FontSize = 10,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xC0, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                });
+
+                detailsRainTimelinePanel.Children.Add(column);
+            }
         }
 
         private void HideDetails()

@@ -10,7 +10,7 @@ namespace WeatherApp;
 /// use and should not be exposed to external consumers.</remarks>
 internal static class AppInfo
 {
-    public const string Version = "0.1.1";
+    public const string Version = "0.2.1";
 
     public const string AboutText = "Created by: Samuel Teixeira Parchao";
 }
