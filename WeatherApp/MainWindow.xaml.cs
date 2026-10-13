@@ -265,6 +265,40 @@ namespace WeatherApp
             RefreshCityNavigator();
             RefreshCityListPage();
             await SyncMapTrackedCitiesAsync();
+            await EnsureTrackedCitiesWeatherAsync();
+        }
+
+        private async Task EnsureTrackedCitiesWeatherAsync()
+        {
+            Boolean updated = false;
+
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                TrackedCity trackedCity = trackedCities[i];
+                String cityKey = GetCityKey(trackedCity.Latitude, trackedCity.Longitude);
+                if (trackedCityWeather.ContainsKey(cityKey))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    WeatherService.WeatherData weather = await WeatherService.GetWeatherAsync(trackedCity.Latitude, trackedCity.Longitude);
+                    trackedCityWeather[cityKey] = weather;
+                    updated = true;
+                }
+                catch
+                {
+                }
+            }
+
+            if (!updated)
+            {
+                return;
+            }
+
+            RefreshCityListPage();
+            await SyncMapTrackedCitiesAsync();
         }
 
         private async Task AddPendingSelectionToFavoritesAsync()
@@ -956,21 +990,6 @@ namespace WeatherApp
                 Margin = new Thickness(20, 0, 20, 24)
             };
 
-            Button astroButton = new Button
-            {
-                Content = "Open Astro Targets",
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Height = 38,
-                CornerRadius = new CornerRadius(10),
-                Background = new SolidColorBrush(Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF)),
-                Foreground = new SolidColorBrush(Colors.White),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x36, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0.5),
-                FontFamily = TextFont
-            };
-            astroButton.Click += OnOpenAstroTargetsClick;
-            panel.Children.Add(CreateSettingsCard("Astronomy", astroButton));
-
             panel.Children.Add(CreateSettingsCard(
                 "About",
                 new TextBlock
@@ -1379,6 +1398,7 @@ namespace WeatherApp
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Margin = new Thickness(12, 0, 12, 0),
                 Content = astroTargetsStack
             };
             Grid.SetRow(targetsScroll, 1);
@@ -1793,10 +1813,9 @@ namespace WeatherApp
                 mapWebView.NavigationCompleted += OnMapNavigationCompleted;
                 mapWebView.NavigateToString(WindowElements.GetMapHtml());
             }
-            else
-            {
-                await SyncMapTrackedCitiesAsync();
-            }
+
+            await EnsureTrackedCitiesWeatherAsync();
+            await SyncMapTrackedCitiesAsync();
 
             Visual visual = ElementCompositionPreview.GetElementVisual(mapWebView);
             Compositor compositor = visual.Compositor;
@@ -1830,12 +1849,12 @@ namespace WeatherApp
             await SetActiveCityByIndexAsync(cityIndex);
         }
 
-        private void OnCityListButtonClick(object sender, RoutedEventArgs e)
+        private async void OnCityListButtonClick(object sender, RoutedEventArgs e)
         {
-            SwitchToCityList();
+            await SwitchToCityListAsync();
         }
 
-        private void SwitchToCityList()
+        private async Task SwitchToCityListAsync()
         {
             forecastContent.Visibility = Visibility.Collapsed;
             mapWebView.Visibility = Visibility.Collapsed;
@@ -1853,6 +1872,8 @@ namespace WeatherApp
                 new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
             fade.Duration = TimeSpan.FromMilliseconds(260);
             visual.StartAnimation("Opacity", fade);
+
+            await EnsureTrackedCitiesWeatherAsync();
         }
 
         private async void OnOpenAstroTargetsClick(object sender, RoutedEventArgs e)
@@ -2221,11 +2242,10 @@ namespace WeatherApp
             });
 
             // Title row with icon
-            StackPanel titleRow = new()
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 12
-            };
+            Grid titleRow = new Grid();
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
             detailsIcon = new TextBlock
             {
@@ -2233,6 +2253,7 @@ namespace WeatherApp
                 FontSize = 28,
                 VerticalAlignment = VerticalAlignment.Center
             };
+            Grid.SetColumn(detailsIcon, 0);
             titleRow.Children.Add(detailsIcon);
 
             detailsTitle = new TextBlock
@@ -2241,9 +2262,34 @@ namespace WeatherApp
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Colors.White),
                 VerticalAlignment = VerticalAlignment.Center,
-                FontFamily = DisplayFont
+                FontFamily = DisplayFont,
+                Margin = new Thickness(12, 0, 0, 0)
             };
+            Grid.SetColumn(detailsTitle, 1);
             titleRow.Children.Add(detailsTitle);
+
+            Button astroQuickButton = new Button
+            {
+                Width = 34,
+                Height = 34,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(10),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5),
+                Content = new SymbolIcon(Symbol.Globe)
+                {
+                    Foreground = new SolidColorBrush(Colors.White)
+                }
+};
+            ToolTipService.SetToolTip(astroQuickButton, "Open Astro Targets");
+            astroQuickButton.Click += OnOpenAstroTargetsClick;
+            Grid.SetColumn(astroQuickButton, 2);
+            titleRow.Children.Add(astroQuickButton);
+
             cardContent.Children.Add(titleRow);
 
             // High / Low
@@ -2438,28 +2484,6 @@ namespace WeatherApp
                 MinHeight = 122
             };
             cardContent.Children.Add(rainScroll);
-
-            Button astroBtn = new()
-            {
-                Content = "Astro Targets",
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                Height = 40,
-                Margin = new Thickness(0, 8, 0, 0),
-                CornerRadius = new CornerRadius(12),
-                Background = new AcrylicBrush
-                {
-                    TintColor = Color.FromArgb(0xFF, 0xD2, 0xDE, 0xF8),
-                    TintOpacity = 0.32,
-                    FallbackColor = Color.FromArgb(0x64, 0xB9, 0xCC, 0xF1)
-                },
-                Foreground = new SolidColorBrush(Colors.White),
-                FontWeight = FontWeights.SemiBold,
-                FontFamily = TextFont,
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0.5)
-            };
-            astroBtn.Click += OnOpenAstroTargetsClick;
-            cardContent.Children.Add(astroBtn);
 
             // Dismiss button
             Button closeBtn = new()
