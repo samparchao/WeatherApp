@@ -43,6 +43,8 @@ namespace WeatherApp
 
         private WebView2 mapWebView;
         private Grid forecastContent;
+        private Grid cityListContent;
+        private StackPanel cityListStack;
         private Button mapToggleButton;
         private StackPanel cityDotsPanel;
         private Button cityListButton;
@@ -209,6 +211,7 @@ namespace WeatherApp
             }
 
             RefreshCityNavigator();
+            RefreshCityListPage();
             await SyncMapTrackedCitiesAsync();
         }
 
@@ -566,6 +569,10 @@ namespace WeatherApp
             };
             Grid.SetRow(mapWebView, 0);
             contentArea.Children.Add(mapWebView);
+
+            cityListContent = CreateCityListPage();
+            Grid.SetRow(cityListContent, 0);
+            contentArea.Children.Add(cityListContent);
 
             Border cityNavigator = CreateCityNavigator();
             Grid.SetRow(cityNavigator, 1);
@@ -1042,6 +1049,150 @@ namespace WeatherApp
             return container;
         }
 
+        private Grid CreateCityListPage()
+        {
+            Grid citiesGrid = new Grid
+            {
+                Visibility = Visibility.Collapsed,
+                Margin = new Thickness(20, 8, 20, 6)
+            };
+            citiesGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            citiesGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+            TextBlock title = new TextBlock
+            {
+                Text = "CITIES",
+                FontSize = 12,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
+                Margin = new Thickness(12, 4, 12, 10),
+                CharacterSpacing = 80,
+                FontFamily = TextFont
+            };
+            Grid.SetRow(title, 0);
+            citiesGrid.Children.Add(title);
+
+            cityListStack = new StackPanel
+            {
+                Spacing = 8,
+                Margin = new Thickness(0, 0, 0, 12),
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+
+            ScrollViewer listScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = cityListStack
+            };
+            Grid.SetRow(listScroll, 1);
+            citiesGrid.Children.Add(listScroll);
+
+            return citiesGrid;
+        }
+
+        private void RefreshCityListPage()
+        {
+            if (cityListStack == null)
+            {
+                return;
+            }
+
+            cityListStack.Children.Clear();
+            IReadOnlyList<CityPickerItem> items = BuildCityPickerItems();
+
+            if (items.Count == 0)
+            {
+                TextBlock empty = new TextBlock
+                {
+                    Text = "No tracked cities yet.",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
+                    FontFamily = TextFont,
+                    Margin = new Thickness(12, 10, 12, 0)
+                };
+                cityListStack.Children.Add(empty);
+                return;
+            }
+
+            foreach (CityPickerItem item in items)
+            {
+                cityListStack.Children.Add(CreateCityListRow(item));
+            }
+        }
+
+        private Button CreateCityListRow(CityPickerItem item)
+        {
+            Grid rowGrid = new Grid
+            {
+                MinHeight = 62
+            };
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(88) });
+
+            StackPanel left = new StackPanel
+            {
+                Spacing = 2,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            left.Children.Add(new TextBlock
+            {
+                Text = item.Name,
+                FontSize = 17,
+                Foreground = new SolidColorBrush(Colors.White),
+                FontFamily = DisplayFont,
+                FontWeight = FontWeights.SemiBold,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            left.Children.Add(new TextBlock
+            {
+                Text = item.Condition,
+                FontSize = 13,
+                Foreground = new SolidColorBrush(Color.FromArgb(0x9A, 0xFF, 0xFF, 0xFF)),
+                FontFamily = TextFont,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+            Grid.SetColumn(left, 0);
+            rowGrid.Children.Add(left);
+
+            TextBlock right = new TextBlock
+            {
+                Text = item.Temperature,
+                FontSize = 24,
+                Foreground = new SolidColorBrush(Colors.White),
+                FontFamily = DisplayFont,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                TextAlignment = TextAlignment.Right,
+                Margin = new Thickness(12, 0, 0, 0)
+            };
+            Grid.SetColumn(right, 1);
+            rowGrid.Children.Add(right);
+
+            Button rowButton = new Button
+            {
+                Tag = item.Index,
+                Height = 86,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
+                    TintOpacity = item.Index == activeTrackedCityIndex ? 0.16 : 0.08,
+                    FallbackColor = item.Index == activeTrackedCityIndex
+                        ? Color.FromArgb(0x36, 0xFF, 0xFF, 0xFF)
+                        : Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)
+                },
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5),
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(14, 12, 14, 12),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                Content = rowGrid
+            };
+            rowButton.Click += OnCityListRowClick;
+            return rowButton;
+        }
+
         private void RefreshCityNavigator()
         {
             if (mapToggleButton != null)
@@ -1050,6 +1201,13 @@ namespace WeatherApp
                 mapToggleButton.Content = new SymbolIcon(isMapVisible ? Symbol.BackToWindow : Symbol.Map);
                 mapToggleButton.Background = new SolidColorBrush(
                     isMapVisible ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
+            }
+
+            if (cityListButton != null)
+            {
+                Boolean isCitiesPageVisible = cityListContent != null && cityListContent.Visibility == Visibility.Visible;
+                cityListButton.Background = new SolidColorBrush(
+                    isCitiesPageVisible ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
             }
 
             if (cityDotsPanel == null)
@@ -1094,6 +1252,7 @@ namespace WeatherApp
             }
 
             mapWebView.Visibility = Visibility.Collapsed;
+            cityListContent.Visibility = Visibility.Collapsed;
             forecastContent.Visibility = Visibility.Visible;
             RefreshCityNavigator();
 
@@ -1117,6 +1276,7 @@ namespace WeatherApp
             }
 
             forecastContent.Visibility = Visibility.Collapsed;
+            cityListContent.Visibility = Visibility.Collapsed;
             mapWebView.Visibility = Visibility.Visible;
             RefreshCityNavigator();
 
@@ -1167,39 +1327,36 @@ namespace WeatherApp
 
         private void OnCityListButtonClick(object sender, RoutedEventArgs e)
         {
-            MenuFlyout flyout = CreateCityPickerFlyout();
-            flyout.ShowAt(cityListButton);
+            SwitchToCityList();
         }
 
-        private MenuFlyout CreateCityPickerFlyout()
+        private void SwitchToCityList()
         {
-            MenuFlyout flyout = new MenuFlyout();
-            IReadOnlyList<CityPickerItem> items = BuildCityPickerItems();
+            forecastContent.Visibility = Visibility.Collapsed;
+            mapWebView.Visibility = Visibility.Collapsed;
+            cityListContent.Visibility = Visibility.Visible;
+            RefreshCityListPage();
+            RefreshCityNavigator();
 
-            if (items.Count == 0)
+            Visual visual = ElementCompositionPreview.GetElementVisual(cityListContent);
+            Compositor compositor = visual.Compositor;
+
+            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0f, 0f);
+            fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
+                new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
+            fade.Duration = TimeSpan.FromMilliseconds(260);
+            visual.StartAnimation("Opacity", fade);
+        }
+
+        private async void OnCityListRowClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button cityButton || cityButton.Tag is not Int32 cityIndex)
             {
-                MenuFlyoutItem emptyItem = new MenuFlyoutItem
-                {
-                    Text = "No tracked cities",
-                    IsEnabled = false
-                };
-                flyout.Items.Add(emptyItem);
-                return flyout;
+                return;
             }
 
-            foreach (CityPickerItem item in items)
-            {
-                MenuFlyoutItem cityItem = new MenuFlyoutItem
-                {
-                    Text = $"{item.Name}  {item.Temperature}  {item.Condition}",
-                    FontFamily = TextFont
-                };
-                Int32 selectedIndex = item.Index;
-                cityItem.Click += async (_, _) => await SetActiveCityByIndexAsync(selectedIndex);
-                flyout.Items.Add(cityItem);
-            }
-
-            return flyout;
+            await SetActiveCityByIndexAsync(cityIndex);
         }
 
         private IReadOnlyList<CityPickerItem> BuildCityPickerItems()
