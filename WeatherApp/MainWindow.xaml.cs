@@ -4,12 +4,18 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Web.WebView2.Core;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Drawing = System.Drawing;
+using System.Globalization;
 using System.Numerics;
+using System.Text.Json;
 using System.Threading.Tasks;
 using WeatherApp.Services;
 using Windows.UI;
@@ -18,6 +24,7 @@ using WeatherApp.Elements;
 using Microsoft.UI.Windowing;
 using Windows.Graphics;
 using Windows.Foundation.Collections;
+using Windows.System;
 
 namespace WeatherApp
 {
@@ -36,12 +43,10 @@ namespace WeatherApp
 
         private WebView2 mapWebView;
         private Grid forecastContent;
-        private Border forecastPill;
-        private Border mapPill;
-        private Border settingsPill;
+        private Button mapToggleButton;
+        private StackPanel cityDotsPanel;
+        private Button cityListButton;
         private bool mapInitialized;
-
-        private Grid settingsContent;
 
         private TextBlock locationText;
         private double currentLatitude;
@@ -67,18 +72,22 @@ namespace WeatherApp
         private ToggleSwitch tempUnitToggle;
         private ToggleSwitch windUnitToggle;
 
+        private readonly List<TrackedCity> trackedCities = [];
+        private readonly Dictionary<string, WeatherService.WeatherData> trackedCityWeather = new(StringComparer.Ordinal);
+        private int activeTrackedCityIndex;
+        private double forecastSwipeStartX;
+        private bool forecastSwipeTracking;
+
+        private AutoSuggestBox citySearchBox;
+        private Button favoriteCityButton;
+        private LocationService.CitySearchResult? pendingCitySelection;
+
         private const string TemperatureUnitSettingKey = "TemperatureUnit";
         private const string WindSpeedUnitSettingKey = "WindSpeedUnit";
+        private const string TrackedCitiesSettingKey = "TrackedCities";
 
         private TrayIcon trayIcon;
         private bool allowClose;
-
-        private enum ActiveTab
-        {
-            Forecast,
-            Map,
-            Settings
-        }
 
         private enum TemperatureUnit
         {
@@ -96,6 +105,14 @@ namespace WeatherApp
             int Index, string Day, string FullDay, string Icon, Color IconColor,
             string High, string Low, string Desc,
             string Humidity, string Wind, string UV);
+
+        private record TrackedCity(string Name, double Latitude, double Longitude, bool IsFavorite);
+
+        private record SavedTrackedCity(string Name, double Latitude, double Longitude);
+
+        private record MapTrackedCity(string Name, double Latitude, double Longitude, bool IsFavorite, bool IsActive, double Temperature);
+
+        private record CityPickerItem(Int32 Index, String Name, String Temperature, String Condition);
 
         /// <summary>
         /// Initializes a new instance of the MainWindow class and configures the main application window.
@@ -119,12 +136,10 @@ namespace WeatherApp
 
         private async Task InitializeLocationAsync()
         {
+            LocationService.LocationResult currentLocation;
             try
             {
-                LocationService.LocationResult location = await LocationService.GetCurrentLocationAsync();
-                locationText.Text = location.CityName;
-                currentLatitude = location.Latitude;
-                currentLongitude = location.Longitude;
+                currentLocation = await LocationService.GetCurrentLocationAsync();
             }
             catch
             {
@@ -132,15 +147,165 @@ namespace WeatherApp
                 return;
             }
 
+            EnsureCurrentLocationTracked(currentLocation);
+            await LoadWeatherForActiveCityAsync();
+        }
+
+        private void EnsureCurrentLocationTracked(LocationService.LocationResult currentLocation)
+        {
+            String currentKey = GetCityKey(currentLocation.Latitude, currentLocation.Longitude);
+            Int32 existingIndex = -1;
+
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                TrackedCity trackedCity = trackedCities[i];
+                String trackedKey = GetCityKey(trackedCity.Latitude, trackedCity.Longitude);
+                if (string.Equals(trackedKey, currentKey, StringComparison.Ordinal))
+                {
+                    existingIndex = i;
+                    break;
+                }
+            }
+
+            Boolean isFavorite = false;
+            if (existingIndex >= 0)
+            {
+                isFavorite = trackedCities[existingIndex].IsFavorite;
+                trackedCities.RemoveAt(existingIndex);
+            }
+
+            TrackedCity currentTrackedCity = new TrackedCity(
+                currentLocation.CityName,
+                currentLocation.Latitude,
+                currentLocation.Longitude,
+                isFavorite);
+
+            trackedCities.Insert(0, currentTrackedCity);
+            activeTrackedCityIndex = 0;
+        }
+
+        private async Task LoadWeatherForActiveCityAsync()
+        {
+            if (trackedCities.Count == 0)
+            {
+                locationText.Text = "Location unavailable";
+                return;
+            }
+
+            TrackedCity activeCity = trackedCities[activeTrackedCityIndex];
+            locationText.Text = activeCity.Name;
+            currentLatitude = activeCity.Latitude;
+            currentLongitude = activeCity.Longitude;
+
             try
             {
-                WeatherService.WeatherData weather = await WeatherService.GetWeatherAsync(currentLatitude, currentLongitude);
+                WeatherService.WeatherData weather = await WeatherService.GetWeatherAsync(activeCity.Latitude, activeCity.Longitude);
+                trackedCityWeather[GetCityKey(activeCity.Latitude, activeCity.Longitude)] = weather;
                 UpdateWeatherUI(weather);
             }
             catch
             {
                 heroCondText.Text = "Weather unavailable";
             }
+
+            RefreshCityNavigator();
+            await SyncMapTrackedCitiesAsync();
+        }
+
+        private async Task AddPendingSelectionToFavoritesAsync()
+        {
+            if (pendingCitySelection == null)
+            {
+                return;
+            }
+
+            LocationService.CitySearchResult selectedCity = pendingCitySelection;
+            await AddOrActivateTrackedCityAsync(selectedCity.CityName, selectedCity.Latitude, selectedCity.Longitude, true);
+
+            citySearchBox.Text = string.Empty;
+            citySearchBox.ItemsSource = Array.Empty<LocationService.CitySearchResult>();
+            SetPendingCitySelection(null);
+        }
+
+        private async Task AddOrActivateTrackedCityAsync(string cityName, double latitude, double longitude, bool favorite)
+        {
+            String incomingKey = GetCityKey(latitude, longitude);
+            Int32 existingIndex = -1;
+
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                TrackedCity trackedCity = trackedCities[i];
+                String trackedKey = GetCityKey(trackedCity.Latitude, trackedCity.Longitude);
+                if (string.Equals(trackedKey, incomingKey, StringComparison.Ordinal))
+                {
+                    existingIndex = i;
+                    break;
+                }
+            }
+
+            if (existingIndex >= 0)
+            {
+                TrackedCity existingCity = trackedCities[existingIndex];
+                trackedCities[existingIndex] = existingCity with
+                {
+                    Name = cityName,
+                    IsFavorite = existingCity.IsFavorite || favorite
+                };
+                activeTrackedCityIndex = existingIndex;
+            }
+            else
+            {
+                trackedCities.Add(new TrackedCity(cityName, latitude, longitude, favorite));
+                activeTrackedCityIndex = trackedCities.Count - 1;
+            }
+
+            RefreshCityNavigator();
+            SaveSettings();
+            await LoadWeatherForActiveCityAsync();
+        }
+
+        private void OnForecastPointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            Windows.Foundation.Point pointerPosition = e.GetCurrentPoint(forecastContent).Position;
+            forecastSwipeStartX = pointerPosition.X;
+            forecastSwipeTracking = true;
+        }
+
+        private async void OnForecastPointerReleased(object sender, PointerRoutedEventArgs e)
+        {
+            if (!forecastSwipeTracking)
+            {
+                return;
+            }
+
+            forecastSwipeTracking = false;
+            Windows.Foundation.Point pointerPosition = e.GetCurrentPoint(forecastContent).Position;
+            Double deltaX = pointerPosition.X - forecastSwipeStartX;
+            if (Math.Abs(deltaX) < 64)
+            {
+                return;
+            }
+
+            Int32 offset = deltaX < 0 ? 1 : -1;
+            await MoveTrackedCityByOffsetAsync(offset);
+        }
+
+        private async Task MoveTrackedCityByOffsetAsync(int offset)
+        {
+            if (trackedCities.Count <= 1)
+            {
+                return;
+            }
+
+            Int32 cityCount = trackedCities.Count;
+            Int32 newIndex = (activeTrackedCityIndex + offset) % cityCount;
+            if (newIndex < 0)
+            {
+                newIndex += cityCount;
+            }
+
+            activeTrackedCityIndex = newIndex;
+            await LoadWeatherForActiveCityAsync();
         }
 
         private void UpdateWeatherUI(WeatherService.WeatherData weather)
@@ -241,6 +406,50 @@ namespace WeatherApp
                 FontFamily = TextFont
             });
 
+            Grid citySearchRow = new()
+            {
+                ColumnSpacing = 10,
+                Margin = new Thickness(24, 10, 24, 0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                MinWidth = 410
+            };
+            citySearchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            citySearchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            citySearchBox = new AutoSuggestBox
+            {
+                PlaceholderText = "Search city to track",
+                MinWidth = 280,
+                QueryIcon = new SymbolIcon(Symbol.Find),
+                FontFamily = TextFont,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            citySearchBox.TextChanged += OnCitySearchTextChanged;
+            citySearchBox.SuggestionChosen += OnCitySuggestionChosen;
+            citySearchBox.QuerySubmitted += OnCityQuerySubmitted;
+            Grid.SetColumn(citySearchBox, 0);
+            citySearchRow.Children.Add(citySearchBox);
+
+            favoriteCityButton = new Button
+            {
+                Content = "Favorite",
+                IsEnabled = false,
+                Height = 36,
+                Padding = new Thickness(14, 0, 14, 0),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                FontFamily = TextFont,
+                CornerRadius = new CornerRadius(10),
+                Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x35, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5)
+            };
+            favoriteCityButton.Click += OnFavoriteCityButtonClick;
+            Grid.SetColumn(favoriteCityButton, 1);
+            citySearchRow.Children.Add(favoriteCityButton);
+
+            headerStack.Children.Add(citySearchRow);
+
             Grid.SetRow(headerStack, 0);
             rootGrid.Children.Add(headerStack);
 
@@ -313,19 +522,17 @@ namespace WeatherApp
             Grid.SetRow(divider, 2);
             rootGrid.Children.Add(divider);
 
-            // Content area with tab selector
+            // Content area with bottom city navigator
             Grid contentArea = new();
-            contentArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             contentArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            Border tabSelector = CreateTabSelector();
-            Grid.SetRow(tabSelector, 0);
-            contentArea.Children.Add(tabSelector);
+            contentArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             // Forecast view
             forecastContent = new Grid();
             forecastContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             forecastContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            forecastContent.PointerPressed += OnForecastPointerPressed;
+            forecastContent.PointerReleased += OnForecastPointerReleased;
 
             TextBlock forecastHeader = new()
             {
@@ -349,7 +556,7 @@ namespace WeatherApp
             Grid.SetRow(forecastScroll, 1);
             forecastContent.Children.Add(forecastScroll);
 
-            Grid.SetRow(forecastContent, 1);
+            Grid.SetRow(forecastContent, 0);
             contentArea.Children.Add(forecastContent);
 
             // Map view (initially hidden)
@@ -357,41 +564,12 @@ namespace WeatherApp
             {
                 Visibility = Visibility.Collapsed
             };
-            Grid.SetRow(mapWebView, 1);
+            Grid.SetRow(mapWebView, 0);
             contentArea.Children.Add(mapWebView);
 
-            // Settings view (initially hidden)
-            settingsContent = new Grid
-            {
-                Visibility = Visibility.Collapsed
-            };
-            settingsContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            settingsContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            TextBlock settingsHeader = new()
-            {
-                Text = "SETTINGS",
-                FontSize = 12,
-                FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
-                Margin = new Thickness(32, 4, 32, 8),
-                CharacterSpacing = 80,
-                FontFamily = TextFont
-            };
-            Grid.SetRow(settingsHeader, 0);
-            settingsContent.Children.Add(settingsHeader);
-
-            ScrollViewer settingsScroll = new()
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = CreateSettingsPanel()
-            };
-            Grid.SetRow(settingsScroll, 1);
-            settingsContent.Children.Add(settingsScroll);
-
-            Grid.SetRow(settingsContent, 1);
-            contentArea.Children.Add(settingsContent);
+            Border cityNavigator = CreateCityNavigator();
+            Grid.SetRow(cityNavigator, 1);
+            contentArea.Children.Add(cityNavigator);
 
             Grid.SetRow(contentArea, 3);
             rootGrid.Children.Add(contentArea);
@@ -399,7 +577,84 @@ namespace WeatherApp
             // Overlay & details sheet
             BuildOverlay(rootGrid);
 
+            rootGrid.IsTabStop = true;
+            rootGrid.KeyDown += OnMainWindowKeyDown;
+            rootGrid.Loaded += (_, _) => rootGrid.Focus(FocusState.Programmatic);
+
             this.Content = rootGrid;
+            RefreshCityNavigator();
+        }
+
+        private async void OnCitySearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+        {
+            if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            {
+                return;
+            }
+
+            SetPendingCitySelection(null);
+
+            String query = sender.Text?.Trim() ?? string.Empty;
+            if (query.Length < 2)
+            {
+                sender.ItemsSource = Array.Empty<LocationService.CitySearchResult>();
+                return;
+            }
+
+            try
+            {
+                IReadOnlyList<LocationService.CitySearchResult> suggestions = await LocationService.SearchCitiesAsync(query);
+                sender.ItemsSource = suggestions;
+            }
+            catch
+            {
+                sender.ItemsSource = Array.Empty<LocationService.CitySearchResult>();
+            }
+        }
+
+        private void OnCitySuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+        {
+            if (args.SelectedItem is not LocationService.CitySearchResult selectedCity)
+            {
+                return;
+            }
+
+            sender.Text = selectedCity.DisplayName;
+            SetPendingCitySelection(selectedCity);
+        }
+
+        private void OnCityQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+        {
+            if (args.ChosenSuggestion is LocationService.CitySearchResult selectedCity)
+            {
+                sender.Text = selectedCity.DisplayName;
+                SetPendingCitySelection(selectedCity);
+                return;
+            }
+
+            if (sender.ItemsSource is IReadOnlyList<LocationService.CitySearchResult> suggestions && suggestions.Count > 0)
+            {
+                LocationService.CitySearchResult fallbackCity = suggestions[0];
+                sender.Text = fallbackCity.DisplayName;
+                SetPendingCitySelection(fallbackCity);
+            }
+        }
+
+        private async void OnFavoriteCityButtonClick(object sender, RoutedEventArgs e)
+        {
+            await AddPendingSelectionToFavoritesAsync();
+        }
+
+        private void SetPendingCitySelection(LocationService.CitySearchResult? selectedCity)
+        {
+            pendingCitySelection = selectedCity;
+            if (favoriteCityButton == null)
+            {
+                return;
+            }
+
+            favoriteCityButton.IsEnabled = selectedCity != null;
+            favoriteCityButton.Content = selectedCity == null ? "Favorite" : $"Favorite {selectedCity.CityName}";
         }
 
         private StackPanel CreateForecastPanel(ForecastDay[] forecast)
@@ -707,103 +962,140 @@ namespace WeatherApp
             };
         }
 
-        private Border CreateTabSelector()
+        private Border CreateCityNavigator()
         {
-            Border outerBorder = new()
+            Border container = new Border
             {
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Margin = new Thickness(0, 8, 0, 4),
+                Margin = new Thickness(18, 10, 18, 14),
+                Padding = new Thickness(12, 8, 12, 8),
                 CornerRadius = new CornerRadius(20),
-                Background = new SolidColorBrush(Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)),
-                Padding = new Thickness(4)
-            };
-
-            Grid grid = new();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            forecastPill = new Border
-            {
-                CornerRadius = new CornerRadius(16),
-                Background = new SolidColorBrush(Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF)),
-                Padding = new Thickness(18, 7, 18, 7),
-                Child = new TextBlock
+                Background = new AcrylicBrush
                 {
-                    Text = "Forecast",
-                    FontSize = 13,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Colors.White),
-                    FontFamily = TextFont
-                }
+                    TintColor = Color.FromArgb(0xFF, 0x16, 0x23, 0x40),
+                    TintOpacity = 0.7,
+                    FallbackColor = Color.FromArgb(0xB8, 0x14, 0x20, 0x38)
+                },
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.6)
             };
-            forecastPill.Tapped += (s, e) => { SwitchToForecast(); e.Handled = true; };
-            Grid.SetColumn(forecastPill, 0);
-            grid.Children.Add(forecastPill);
 
-            mapPill = new Border
+            Grid grid = new Grid
             {
-                CornerRadius = new CornerRadius(16),
-                Background = new SolidColorBrush(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF)),
-                Padding = new Thickness(18, 7, 18, 7),
-                Child = new TextBlock
-                {
-                    Text = "Temperature Map",
-                    FontSize = 13,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
-                    FontFamily = TextFont
-                }
+                VerticalAlignment = VerticalAlignment.Center
             };
-            mapPill.Tapped += (s, e) => { SwitchToMap(); e.Handled = true; };
-            Grid.SetColumn(mapPill, 1);
-            grid.Children.Add(mapPill);
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            settingsPill = new Border
+            mapToggleButton = new Button
             {
-                CornerRadius = new CornerRadius(16),
-                Background = new SolidColorBrush(Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF)),
-                Padding = new Thickness(18, 7, 18, 7),
-                Child = new TextBlock
-                {
-                    Text = "Settings",
-                    FontSize = 13,
-                    FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
-                    FontFamily = TextFont
-                }
+                Width = 40,
+                Height = 40,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(12),
+                FontFamily = TextFont,
+                Background = new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderThickness = new Thickness(0)
             };
-            settingsPill.Tapped += (s, e) => { SwitchToSettings(); e.Handled = true; };
-            Grid.SetColumn(settingsPill, 2);
-            grid.Children.Add(settingsPill);
+            mapToggleButton.Click += OnMapToggleButtonClick;
+            Grid.SetColumn(mapToggleButton, 0);
+            grid.Children.Add(mapToggleButton);
 
-            outerBorder.Child = grid;
-            return outerBorder;
+            cityDotsPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 8,
+                Margin = new Thickness(8, 0, 8, 0)
+            };
+
+            ScrollViewer dotsScroll = new ScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                HorizontalScrollMode = ScrollMode.Enabled,
+                VerticalScrollMode = ScrollMode.Disabled,
+                Content = cityDotsPanel
+            };
+            dotsScroll.PointerWheelChanged += OnCityPointerWheelChanged;
+            Grid.SetColumn(dotsScroll, 1);
+            grid.Children.Add(dotsScroll);
+
+            cityListButton = new Button
+            {
+                Width = 40,
+                Height = 40,
+                Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(12),
+                Background = new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderThickness = new Thickness(0),
+                Content = new SymbolIcon(Symbol.Bullets)
+            };
+            cityListButton.Click += OnCityListButtonClick;
+            Grid.SetColumn(cityListButton, 2);
+            grid.Children.Add(cityListButton);
+
+            container.Child = grid;
+            return container;
         }
 
-        private void UpdateTabAppearance(ActiveTab activeTab)
+        private void RefreshCityNavigator()
         {
-            UpdateTabPill(forecastPill, activeTab == ActiveTab.Forecast);
-            UpdateTabPill(mapPill, activeTab == ActiveTab.Map);
-            UpdateTabPill(settingsPill, activeTab == ActiveTab.Settings);
-        }
+            if (mapToggleButton != null)
+            {
+                Boolean isMapVisible = mapWebView != null && mapWebView.Visibility == Visibility.Visible;
+                mapToggleButton.Content = new SymbolIcon(isMapVisible ? Symbol.BackToWindow : Symbol.Map);
+                mapToggleButton.Background = new SolidColorBrush(
+                    isMapVisible ? Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF));
+            }
 
-        private static void UpdateTabPill(Border pill, bool isActive)
-        {
-            pill.Background = new SolidColorBrush(
-                isActive ? Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x00, 0xFF, 0xFF, 0xFF));
-            ((TextBlock)pill.Child).Foreground = new SolidColorBrush(
-                isActive ? Colors.White : Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF));
+            if (cityDotsPanel == null)
+            {
+                return;
+            }
+
+            cityDotsPanel.Children.Clear();
+
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                Ellipse dotShape = new Ellipse
+                {
+                    Width = i == activeTrackedCityIndex ? 10 : 8,
+                    Height = i == activeTrackedCityIndex ? 10 : 8,
+                    Fill = new SolidColorBrush(i == activeTrackedCityIndex
+                        ? Color.FromArgb(0xF5, 0xFF, 0xFF, 0xFF)
+                        : Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF))
+                };
+
+                Button dotButton = new Button
+                {
+                    Tag = i,
+                    Padding = new Thickness(0),
+                    MinWidth = 14,
+                    MinHeight = 14,
+                    Background = new SolidColorBrush(Colors.Transparent),
+                    BorderThickness = new Thickness(0),
+                    Content = dotShape
+                };
+                dotButton.Click += OnCityDotButtonClick;
+                cityDotsPanel.Children.Add(dotButton);
+            }
         }
 
         private void SwitchToForecast()
         {
-            if (forecastContent.Visibility == Visibility.Visible) return;
+            if (forecastContent.Visibility == Visibility.Visible)
+            {
+                RefreshCityNavigator();
+                return;
+            }
 
             mapWebView.Visibility = Visibility.Collapsed;
-            settingsContent.Visibility = Visibility.Collapsed;
             forecastContent.Visibility = Visibility.Visible;
-            UpdateTabAppearance(ActiveTab.Forecast);
+            RefreshCityNavigator();
 
             Visual visual = ElementCompositionPreview.GetElementVisual(forecastContent);
             Compositor compositor = visual.Compositor;
@@ -818,19 +1110,27 @@ namespace WeatherApp
 
         private async void SwitchToMap()
         {
-            if (mapWebView.Visibility == Visibility.Visible) return;
+            if (mapWebView.Visibility == Visibility.Visible)
+            {
+                RefreshCityNavigator();
+                return;
+            }
 
             forecastContent.Visibility = Visibility.Collapsed;
-            settingsContent.Visibility = Visibility.Collapsed;
             mapWebView.Visibility = Visibility.Visible;
-            UpdateTabAppearance(ActiveTab.Map);
+            RefreshCityNavigator();
 
             if (!mapInitialized)
             {
                 mapInitialized = true;
                 await mapWebView.EnsureCoreWebView2Async();
-                mapWebView.DefaultBackgroundColor = Color.FromArgb(0xFF, 0x0D, 0x14, 0x2B);
+                mapWebView.DefaultBackgroundColor = Color.FromArgb(0xFF, 0xE6, 0xEC, 0xF5);
+                mapWebView.NavigationCompleted += OnMapNavigationCompleted;
                 mapWebView.NavigateToString(WindowElements.GetMapHtml());
+            }
+            else
+            {
+                await SyncMapTrackedCitiesAsync();
             }
 
             Visual visual = ElementCompositionPreview.GetElementVisual(mapWebView);
@@ -844,24 +1144,170 @@ namespace WeatherApp
             visual.StartAnimation("Opacity", fade);
         }
 
-        private void SwitchToSettings()
+        private void OnMapToggleButtonClick(object sender, RoutedEventArgs e)
         {
-            if (settingsContent.Visibility == Visibility.Visible) return;
+            if (mapWebView.Visibility == Visibility.Visible)
+            {
+                SwitchToForecast();
+                return;
+            }
 
-            forecastContent.Visibility = Visibility.Collapsed;
-            mapWebView.Visibility = Visibility.Collapsed;
-            settingsContent.Visibility = Visibility.Visible;
-            UpdateTabAppearance(ActiveTab.Settings);
+            SwitchToMap();
+        }
 
-            Visual visual = ElementCompositionPreview.GetElementVisual(settingsContent);
-            Compositor compositor = visual.Compositor;
+        private async void OnCityDotButtonClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button cityButton || cityButton.Tag is not Int32 cityIndex)
+            {
+                return;
+            }
 
-            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
-            fade.InsertKeyFrame(0f, 0f);
-            fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
-            fade.Duration = TimeSpan.FromMilliseconds(300);
-            visual.StartAnimation("Opacity", fade);
+            await SetActiveCityByIndexAsync(cityIndex);
+        }
+
+        private void OnCityListButtonClick(object sender, RoutedEventArgs e)
+        {
+            MenuFlyout flyout = CreateCityPickerFlyout();
+            flyout.ShowAt(cityListButton);
+        }
+
+        private MenuFlyout CreateCityPickerFlyout()
+        {
+            MenuFlyout flyout = new MenuFlyout();
+            IReadOnlyList<CityPickerItem> items = BuildCityPickerItems();
+
+            if (items.Count == 0)
+            {
+                MenuFlyoutItem emptyItem = new MenuFlyoutItem
+                {
+                    Text = "No tracked cities",
+                    IsEnabled = false
+                };
+                flyout.Items.Add(emptyItem);
+                return flyout;
+            }
+
+            foreach (CityPickerItem item in items)
+            {
+                MenuFlyoutItem cityItem = new MenuFlyoutItem
+                {
+                    Text = $"{item.Name}  {item.Temperature}  {item.Condition}",
+                    FontFamily = TextFont
+                };
+                Int32 selectedIndex = item.Index;
+                cityItem.Click += async (_, _) => await SetActiveCityByIndexAsync(selectedIndex);
+                flyout.Items.Add(cityItem);
+            }
+
+            return flyout;
+        }
+
+        private IReadOnlyList<CityPickerItem> BuildCityPickerItems()
+        {
+            List<CityPickerItem> items = new List<CityPickerItem>();
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                TrackedCity trackedCity = trackedCities[i];
+                String cityKey = GetCityKey(trackedCity.Latitude, trackedCity.Longitude);
+                String temperature = "--";
+                String condition = "Loading";
+
+                if (trackedCityWeather.TryGetValue(cityKey, out WeatherService.WeatherData weatherData))
+                {
+                    temperature = FormatTemperature(weatherData.Current.Temperature);
+                    (String description, String icon, Byte red, Byte green, Byte blue) = WeatherService.MapWeatherCode(weatherData.Current.WeatherCode);
+                    condition = description;
+                }
+
+                String cityName = i == 0 ? $"{trackedCity.Name} (Current Location)" : trackedCity.Name;
+                items.Add(new CityPickerItem(i, cityName, temperature, condition));
+            }
+
+            return items;
+        }
+
+        private async Task SetActiveCityByIndexAsync(Int32 cityIndex)
+        {
+            if (cityIndex < 0 || cityIndex >= trackedCities.Count)
+            {
+                return;
+            }
+
+            activeTrackedCityIndex = cityIndex;
+            await LoadWeatherForActiveCityAsync();
+            SwitchToForecast();
+        }
+
+        private async void OnMainWindowKeyDown(object sender, KeyRoutedEventArgs e)
+        {
+            if (e.Key == VirtualKey.Right)
+            {
+                await MoveTrackedCityByOffsetAsync(1);
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == VirtualKey.Left)
+            {
+                await MoveTrackedCityByOffsetAsync(-1);
+                e.Handled = true;
+            }
+        }
+
+        private async void OnCityPointerWheelChanged(object sender, PointerRoutedEventArgs e)
+        {
+            Int32 delta = e.GetCurrentPoint((UIElement)sender).Properties.MouseWheelDelta;
+            if (delta == 0)
+            {
+                return;
+            }
+
+            Int32 offset = delta < 0 ? 1 : -1;
+            await MoveTrackedCityByOffsetAsync(offset);
+            e.Handled = true;
+        }
+
+        private async void OnMapNavigationCompleted(WebView2 sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            if (!args.IsSuccess)
+            {
+                return;
+            }
+
+            await SyncMapTrackedCitiesAsync();
+        }
+
+        private async Task SyncMapTrackedCitiesAsync()
+        {
+            if (!mapInitialized || mapWebView.CoreWebView2 == null)
+            {
+                return;
+            }
+
+            List<MapTrackedCity> mapCities = new List<MapTrackedCity>();
+            for (Int32 i = 0; i < trackedCities.Count; i++)
+            {
+                TrackedCity trackedCity = trackedCities[i];
+                String cityKey = GetCityKey(trackedCity.Latitude, trackedCity.Longitude);
+                Double temperature = 0;
+
+                if (trackedCityWeather.TryGetValue(cityKey, out WeatherService.WeatherData weatherData))
+                {
+                    temperature = weatherData.Current.Temperature;
+                }
+
+                mapCities.Add(new MapTrackedCity(
+                    trackedCity.Name,
+                    trackedCity.Latitude,
+                    trackedCity.Longitude,
+                    trackedCity.IsFavorite,
+                    i == activeTrackedCityIndex,
+                    temperature));
+            }
+
+            String payload = JsonSerializer.Serialize(mapCities);
+            String script = $"window.setTrackedCities({payload});";
+            await mapWebView.CoreWebView2.ExecuteScriptAsync(script);
         }
 
         private void BuildOverlay(Grid rootGrid)
@@ -1147,6 +1593,8 @@ namespace WeatherApp
             {
                 windSpeedUnit = storedWindUnit;
             }
+
+            LoadTrackedCitiesFromSettings(settings);
         }
 
         private void SaveSettings()
@@ -1154,6 +1602,63 @@ namespace WeatherApp
             IPropertySet settings = ApplicationData.Current.LocalSettings.Values;
             settings[TemperatureUnitSettingKey] = temperatureUnit.ToString();
             settings[WindSpeedUnitSettingKey] = windSpeedUnit.ToString();
+            SaveTrackedCitiesToSettings(settings);
+        }
+
+        private void LoadTrackedCitiesFromSettings(IPropertySet settings)
+        {
+            trackedCities.Clear();
+
+            if (!settings.TryGetValue(TrackedCitiesSettingKey, out Object trackedValue) || trackedValue is not string trackedJson)
+            {
+                return;
+            }
+
+            try
+            {
+                SavedTrackedCity[]? savedCities = JsonSerializer.Deserialize<SavedTrackedCity[]>(trackedJson);
+                if (savedCities == null)
+                {
+                    return;
+                }
+
+                foreach (SavedTrackedCity savedCity in savedCities)
+                {
+                    if (string.IsNullOrWhiteSpace(savedCity.Name))
+                    {
+                        continue;
+                    }
+
+                    trackedCities.Add(new TrackedCity(savedCity.Name, savedCity.Latitude, savedCity.Longitude, true));
+                }
+            }
+            catch
+            {
+                trackedCities.Clear();
+            }
+        }
+
+        private void SaveTrackedCitiesToSettings(IPropertySet settings)
+        {
+            List<SavedTrackedCity> savedCities = new List<SavedTrackedCity>();
+            foreach (TrackedCity trackedCity in trackedCities)
+            {
+                if (!trackedCity.IsFavorite)
+                {
+                    continue;
+                }
+
+                savedCities.Add(new SavedTrackedCity(trackedCity.Name, trackedCity.Latitude, trackedCity.Longitude));
+            }
+
+            settings[TrackedCitiesSettingKey] = JsonSerializer.Serialize(savedCities);
+        }
+
+        private static string GetCityKey(double latitude, double longitude)
+        {
+            return string.Create(
+                CultureInfo.InvariantCulture,
+                $"{Math.Round(latitude, 4):F4}|{Math.Round(longitude, 4):F4}");
         }
 
 
