@@ -112,35 +112,20 @@ internal sealed class LocationService
 
     private static String BuildCityLabel(JsonElement element, String fallback)
     {
-        if (element.TryGetProperty("address", out JsonElement address))
+        if (!element.TryGetProperty("address", out JsonElement address))
         {
-            if (address.TryGetProperty("city", out JsonElement city))
-            {
-                return city.GetString() ?? fallback;
-            }
-
-            if (address.TryGetProperty("town", out JsonElement town))
-            {
-                return town.GetString() ?? fallback;
-            }
-
-            if (address.TryGetProperty("village", out JsonElement village))
-            {
-                return village.GetString() ?? fallback;
-            }
-
-            if (address.TryGetProperty("municipality", out JsonElement municipality))
-            {
-                return municipality.GetString() ?? fallback;
-            }
-
-            if (address.TryGetProperty("state", out JsonElement state))
-            {
-                return state.GetString() ?? fallback;
-            }
+            return fallback.Split(',')[0];
         }
 
-        return fallback.Split(',')[0];
+        String? label = TryGetAddressValue(address, "city")
+            ?? TryGetAddressValue(address, "town")
+            ?? TryGetAddressValue(address, "village")
+            ?? TryGetAddressValue(address, "municipality")
+            ?? TryGetAddressValue(address, "state");
+
+        return string.IsNullOrWhiteSpace(label)
+            ? fallback.Split(',')[0]
+            : label;
     }
 
     private static async Task<string> ReverseGeocodeAsync(double lat, double lon)
@@ -158,16 +143,16 @@ internal sealed class LocationService
 
             JsonElement address = doc.RootElement.GetProperty("address");
 
-            if (address.TryGetProperty("city", out JsonElement city))
-                return city.GetString()!;
-            if (address.TryGetProperty("town", out JsonElement town))
-                return town.GetString()!;
-            if (address.TryGetProperty("village", out JsonElement village))
-                return village.GetString()!;
-            if (address.TryGetProperty("county", out JsonElement county))
-                return county.GetString()!;
-            if (address.TryGetProperty("state", out JsonElement state))
-                return state.GetString()!;
+            String? location = TryGetAddressValue(address, "city")
+                ?? TryGetAddressValue(address, "town")
+                ?? TryGetAddressValue(address, "village")
+                ?? TryGetAddressValue(address, "county")
+                ?? TryGetAddressValue(address, "state");
+
+            if (!string.IsNullOrWhiteSpace(location))
+            {
+                return location;
+            }
 
             return doc.RootElement.GetProperty("display_name")
                 .GetString()!.Split(',')[0];
@@ -176,5 +161,16 @@ internal sealed class LocationService
         {
             return "Unknown Location";
         }
+    }
+
+    private static String? TryGetAddressValue(JsonElement address, String propertyName)
+    {
+        if (!address.TryGetProperty(propertyName, out JsonElement valueElement))
+        {
+            return null;
+        }
+
+        String? value = valueElement.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 }
