@@ -589,16 +589,17 @@ namespace WeatherApp
             Grid.SetRow(cityListContent, 0);
             contentArea.Children.Add(cityListContent);
 
-            astroContent = CreateAstroPage();
-            Grid.SetRow(astroContent, 0);
-            contentArea.Children.Add(astroContent);
-
             Border cityNavigator = CreateCityNavigator();
             Grid.SetRow(cityNavigator, 1);
             contentArea.Children.Add(cityNavigator);
 
             Grid.SetRow(contentArea, 3);
             rootGrid.Children.Add(contentArea);
+
+            astroContent = CreateAstroPage();
+            Grid.SetRowSpan(astroContent, 4);
+            Canvas.SetZIndex(astroContent, 20);
+            rootGrid.Children.Add(astroContent);
 
             // Overlay & details sheet
             BuildOverlay(rootGrid);
@@ -1115,26 +1116,64 @@ namespace WeatherApp
             Grid astroGrid = new Grid
             {
                 Visibility = Visibility.Collapsed,
-                Margin = new Thickness(20, 8, 20, 6)
+                Margin = new Thickness(0),
+                Background = new LinearGradientBrush
+                {
+                    StartPoint = new Windows.Foundation.Point(0.3, 0),
+                    EndPoint = new Windows.Foundation.Point(0.7, 1),
+                    GradientStops =
+                    {
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x08, 0x11, 0x24), Offset = 0 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x12, 0x1E, 0x3A), Offset = 0.35 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x1D, 0x2E, 0x52), Offset = 0.72 },
+                        new GradientStop { Color = Color.FromArgb(0xFF, 0x2A, 0x3E, 0x68), Offset = 1 }
+                    }
+                }
             };
             astroGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            astroGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(188) });
             astroGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
             StackPanel headerStack = new StackPanel
             {
-                Spacing = 2,
-                Margin = new Thickness(12, 2, 12, 10)
+                Spacing = 6,
+                Margin = new Thickness(12, 46, 12, 10)
             };
-            headerStack.Children.Add(new TextBlock
+
+            Grid topHeaderRow = new Grid();
+            topHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            topHeaderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            Button closeAstroButton = new Button
+            {
+                Content = new SymbolIcon(Symbol.Back),
+                Width = 34,
+                Height = 34,
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)),
+                Foreground = new SolidColorBrush(Colors.White),
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            closeAstroButton.Click += OnCloseAstroPageClick;
+            Grid.SetColumn(closeAstroButton, 0);
+            topHeaderRow.Children.Add(closeAstroButton);
+
+            TextBlock sectionLabel = new TextBlock
             {
                 Text = "ASTRO TARGETS",
                 FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)),
                 CharacterSpacing = 80,
-                FontFamily = TextFont
-            });
+                FontFamily = TextFont,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(10, 0, 0, 0)
+            };
+            Grid.SetColumn(sectionLabel, 1);
+            topHeaderRow.Children.Add(sectionLabel);
+
+            headerStack.Children.Add(topHeaderRow);
 
             astroPageTitle = new TextBlock
             {
@@ -1165,81 +1204,6 @@ namespace WeatherApp
             Grid.SetRow(targetsScroll, 1);
             astroGrid.Children.Add(targetsScroll);
 
-            StackPanel detailsStack = new StackPanel
-            {
-                Spacing = 8
-            };
-
-            astroSummaryText = new TextBlock
-            {
-                Text = "Select a target to see details.",
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xDD, 0xFF, 0xFF, 0xFF)),
-                FontFamily = TextFont,
-                FontSize = 14,
-                MaxLines = 4,
-                TextTrimming = TextTrimming.WordEllipsis
-            };
-            detailsStack.Children.Add(astroSummaryText);
-
-            astroCoordinatesText = new TextBlock
-            {
-                Foreground = new SolidColorBrush(Colors.White),
-                FontFamily = DisplayFont,
-                FontSize = 16,
-                FontWeight = FontWeights.SemiBold
-            };
-            detailsStack.Children.Add(astroCoordinatesText);
-
-            astroBestWindowText = new TextBlock
-            {
-                Foreground = new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)),
-                FontFamily = TextFont,
-                FontSize = 13
-            };
-            detailsStack.Children.Add(astroBestWindowText);
-
-            astroExtraText = new TextBlock
-            {
-                Foreground = new SolidColorBrush(Color.FromArgb(0x9A, 0xFF, 0xFF, 0xFF)),
-                FontFamily = TextFont,
-                FontSize = 13,
-                TextWrapping = TextWrapping.Wrap,
-                Visibility = Visibility.Collapsed
-            };
-            detailsStack.Children.Add(astroExtraText);
-
-            astroExpandButton = new Button
-            {
-                Content = "Show more",
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Padding = new Thickness(10, 4, 10, 4),
-                CornerRadius = new CornerRadius(10),
-                Background = new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0),
-                Foreground = new SolidColorBrush(Colors.White),
-                FontFamily = TextFont
-            };
-            astroExpandButton.Click += OnAstroExpandButtonClick;
-            detailsStack.Children.Add(astroExpandButton);
-
-            Border detailCard = new Border
-            {
-                Background = new AcrylicBrush
-                {
-                    TintColor = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF),
-                    TintOpacity = 0.08,
-                    FallbackColor = Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF)
-                },
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF)),
-                BorderThickness = new Thickness(0.5),
-                CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(14, 12, 14, 12),
-                Child = detailsStack
-            };
-
-            Grid.SetRow(detailCard, 2);
-            astroGrid.Children.Add(detailCard);
             return astroGrid;
         }
 
@@ -1264,7 +1228,6 @@ namespace WeatherApp
                 });
 
                 selectedAstroTargetIndex = -1;
-                UpdateAstroTargetDetails();
                 return;
             }
 
@@ -1277,8 +1240,6 @@ namespace WeatherApp
             {
                 astroTargetsStack.Children.Add(CreateAstroTargetRow(new AstroTargetListItem(i, astroTargets[i])));
             }
-
-            UpdateAstroTargetDetails();
         }
 
         private Button CreateAstroTargetRow(AstroTargetListItem item)
@@ -1358,9 +1319,10 @@ namespace WeatherApp
                     TextWrapping = TextWrapping.Wrap
                 });
 
+                String telescopeDirection = GetWindDirection(item.Target.AzimuthDegrees);
                 rowContent.Children.Add(new TextBlock
                 {
-                    Text = $"Alt {item.Target.AltitudeDegrees:F0}°  •  Az {item.Target.AzimuthDegrees:F0}°",
+                    Text = $"Alt {item.Target.AltitudeDegrees:F0}\u00B0  \u2022  Az {item.Target.AzimuthDegrees:F0}\u00B0 ({telescopeDirection})",
                     FontSize = 14,
                     Foreground = new SolidColorBrush(Colors.White),
                     FontFamily = DisplayFont,
@@ -1369,7 +1331,7 @@ namespace WeatherApp
 
                 rowContent.Children.Add(new TextBlock
                 {
-                    Text = $"Best window: {item.Target.BestTimeWindow}   •   Mag {item.Target.Magnitude:F1}",
+                    Text = $"Best window: {item.Target.BestTimeWindow}   \u2022   Mag {item.Target.Magnitude:F1}",
                     FontSize = 12,
                     Foreground = new SolidColorBrush(Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF)),
                     FontFamily = TextFont,
@@ -1430,8 +1392,10 @@ namespace WeatherApp
 
             AstroService.AstroTargetInfo target = astroTargets[selectedAstroTargetIndex];
             astroSummaryText.Text = target.Summary;
-            astroCoordinatesText.Text = $"Alt {target.AltitudeDegrees:F0}°  •  Az {target.AzimuthDegrees:F0}°";
-            astroBestWindowText.Text = $"{target.Category}  •  Mag {target.Magnitude:F1}  •  Best: {target.BestTimeWindow}";
+            astroSummaryText.MaxLines = astroExpanded ? 0 : 4;
+            astroSummaryText.TextTrimming = astroExpanded ? TextTrimming.None : TextTrimming.WordEllipsis;
+            astroCoordinatesText.Text = $"Alt {target.AltitudeDegrees:F0}\u00B0  \u2022  Az {target.AzimuthDegrees:F0}\u00B0";
+            astroBestWindowText.Text = $"{target.Category}  \u2022  Mag {target.Magnitude:F1}  \u2022  Best: {target.BestTimeWindow}";
             astroExtraText.Text = target.ExpandableDetails;
             astroExtraText.Visibility = astroExpanded ? Visibility.Visible : Visibility.Collapsed;
             astroExpandButton.Visibility = Visibility.Visible;
@@ -1704,23 +1668,126 @@ namespace WeatherApp
             await OpenAstroTargetsForSelectedDayAsync();
         }
 
+        private void OnCloseAstroPageClick(object sender, RoutedEventArgs e)
+        {
+            SwitchToForecast();
+        }
+
         private void SwitchToAstroPage()
         {
-            forecastContent.Visibility = Visibility.Collapsed;
-            mapWebView.Visibility = Visibility.Collapsed;
-            cityListContent.Visibility = Visibility.Collapsed;
+            UIElement source = null;
+            if (forecastContent.Visibility == Visibility.Visible)
+            {
+                source = forecastContent;
+            }
+            else if (mapWebView.Visibility == Visibility.Visible)
+            {
+                source = mapWebView;
+            }
+            else if (cityListContent.Visibility == Visibility.Visible)
+            {
+                source = cityListContent;
+            }
+
+            if (source == null)
+            {
+                source = forecastContent;
+            }
+
+            if (source != mapWebView)
+            {
+                mapWebView.Visibility = Visibility.Collapsed;
+            }
+
+            if (source != cityListContent)
+            {
+                cityListContent.Visibility = Visibility.Collapsed;
+            }
+
+            if (source != forecastContent)
+            {
+                forecastContent.Visibility = Visibility.Collapsed;
+            }
+
             astroContent.Visibility = Visibility.Visible;
+            astroContent.Opacity = 0;
+            astroContent.RenderTransform = new TranslateTransform { Y = 20 };
+
+            if (source != astroContent)
+            {
+                source.Visibility = Visibility.Visible;
+                source.Opacity = 1;
+                source.RenderTransform = new TranslateTransform { Y = 0 };
+            }
+
             RefreshCityNavigator();
 
-            Visual visual = ElementCompositionPreview.GetElementVisual(astroContent);
-            Compositor compositor = visual.Compositor;
+            Storyboard storyboard = new Storyboard();
 
-            ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
-            fade.InsertKeyFrame(0f, 0f);
-            fade.InsertKeyFrame(1f, 1f, compositor.CreateCubicBezierEasingFunction(
-                new Vector2(0.2f, 0f), new Vector2(0f, 1f)));
-            fade.Duration = TimeSpan.FromMilliseconds(260);
-            visual.StartAnimation("Opacity", fade);
+            if (source != astroContent)
+            {
+                DoubleAnimation sourceFade = new DoubleAnimation
+                {
+                    From = 1,
+                    To = 0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(230)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+                };
+                Storyboard.SetTarget(sourceFade, source);
+                Storyboard.SetTargetProperty(sourceFade, "Opacity");
+                storyboard.Children.Add(sourceFade);
+
+                DoubleAnimation sourceSlide = new DoubleAnimation
+                {
+                    From = 0,
+                    To = -8,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(230)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
+                };
+                Storyboard.SetTarget(sourceSlide, source.RenderTransform);
+                Storyboard.SetTargetProperty(sourceSlide, "Y");
+                storyboard.Children.Add(sourceSlide);
+            }
+
+            DoubleAnimation targetFade = new DoubleAnimation
+            {
+                From = 0,
+                To = 1,
+                Duration = new Duration(TimeSpan.FromMilliseconds(300)),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            Storyboard.SetTarget(targetFade, astroContent);
+            Storyboard.SetTargetProperty(targetFade, "Opacity");
+            storyboard.Children.Add(targetFade);
+
+            if (astroContent.RenderTransform is TranslateTransform astroTranslate)
+            {
+                DoubleAnimation targetSlide = new DoubleAnimation
+                {
+                    From = 20,
+                    To = 0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(300)),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
+                Storyboard.SetTarget(targetSlide, astroTranslate);
+                Storyboard.SetTargetProperty(targetSlide, "Y");
+                storyboard.Children.Add(targetSlide);
+            }
+
+            storyboard.Completed += (s, e) =>
+            {
+                if (source != astroContent)
+                {
+                    source.Visibility = Visibility.Collapsed;
+                    source.Opacity = 1;
+                    if (source.RenderTransform is TranslateTransform sourceTranslate)
+                    {
+                        sourceTranslate.Y = 0;
+                    }
+                }
+            };
+
+            storyboard.Begin();
         }
 
         private async Task OpenAstroTargetsForSelectedDayAsync()
@@ -1741,7 +1808,7 @@ namespace WeatherApp
 
             if (astroPageTitle != null)
             {
-                astroPageTitle.Text = $"{activeCity.Name} • {forecastDate:ddd, MMM d}";
+                astroPageTitle.Text = string.Create(CultureInfo.InvariantCulture, $"{activeCity.Name} \u2022 {forecastDate:ddd, MMM d}");
             }
 
             HideDetails();
@@ -2037,11 +2104,17 @@ namespace WeatherApp
                 Height = 40,
                 Margin = new Thickness(0, 8, 0, 0),
                 CornerRadius = new CornerRadius(12),
-                Background = new SolidColorBrush(Color.FromArgb(0x28, 0xFF, 0xD4, 0x5E)),
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x1A, 0x22, 0x3A)),
+                Background = new AcrylicBrush
+                {
+                    TintColor = Color.FromArgb(0xFF, 0xD2, 0xDE, 0xF8),
+                    TintOpacity = 0.32,
+                    FallbackColor = Color.FromArgb(0x64, 0xB9, 0xCC, 0xF1)
+                },
+                Foreground = new SolidColorBrush(Colors.White),
                 FontWeight = FontWeights.SemiBold,
                 FontFamily = TextFont,
-                BorderThickness = new Thickness(0)
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(0.5)
             };
             astroBtn.Click += OnOpenAstroTargetsClick;
             cardContent.Children.Add(astroBtn);

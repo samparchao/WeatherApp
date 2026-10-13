@@ -19,19 +19,14 @@ internal sealed class AstroService
         }
     };
 
-    private static readonly AstroCatalogItem[] Catalog =
+    private static readonly String[] CatalogEndpoints =
     [
-        new AstroCatalogItem("Andromeda Galaxy", "Andromeda_Galaxy", "Galaxy", 0.712, 41.269, 3.4),
-        new AstroCatalogItem("Orion Nebula", "Orion_Nebula", "Nebula", 5.588, -5.391, 4.0),
-        new AstroCatalogItem("Pleiades", "Pleiades", "Open Cluster", 3.792, 24.117, 1.6),
-        new AstroCatalogItem("Lagoon Nebula", "Lagoon_Nebula", "Nebula", 18.060, -24.384, 6.0),
-        new AstroCatalogItem("Eagle Nebula", "Eagle_Nebula", "Nebula", 18.314, -13.806, 6.4),
-        new AstroCatalogItem("Ring Nebula", "Ring_Nebula", "Planetary Nebula", 18.886, 33.029, 8.8),
-        new AstroCatalogItem("Jupiter", "Jupiter", "Planet", 2.000, 12.000, -2.3),
-        new AstroCatalogItem("Saturn", "Saturn", "Planet", 22.000, -12.000, 0.6),
-        new AstroCatalogItem("Mars", "Mars", "Planet", 7.000, 18.000, 0.8),
-        new AstroCatalogItem("Moon", "Moon", "Natural Satellite", 8.000, 22.000, -12.0)
+        "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/messier.json",
+        "https://raw.githubusercontent.com/ofrohn/d3-celestial/master/data/dso.en.json"
     ];
+
+    private static List<AstroCatalogItem> dynamicCatalogCache = new List<AstroCatalogItem>();
+    private static DateTime cacheExpiresUtc = DateTime.MinValue;
 
     private record AstroCatalogItem(
         String Name,
@@ -58,9 +53,15 @@ internal sealed class AstroService
         DateTime localDate,
         Int32 count = 5)
     {
+        IReadOnlyList<AstroCatalogItem> catalog = await GetDynamicCatalogAsync();
+        if (catalog.Count == 0)
+        {
+            return Array.Empty<AstroTargetInfo>();
+        }
+
         List<(AstroCatalogItem Item, TargetComputation Computation)> ranked = new List<(AstroCatalogItem, TargetComputation)>();
 
-        foreach (AstroCatalogItem item in Catalog)
+        foreach (AstroCatalogItem item in catalog)
         {
             TargetComputation computation = ComputeTarget(latitude, longitude, localDate, item);
             if (computation.VisibilityScore <= 0)
@@ -99,6 +100,283 @@ internal sealed class AstroService
         }
 
         return results;
+    }
+
+    private static async Task<IReadOnlyList<AstroCatalogItem>> GetDynamicCatalogAsync()
+    {
+        DateTime utcNow = DateTime.UtcNow;
+        if (dynamicCatalogCache.Count > 0 && utcNow < cacheExpiresUtc)
+        {
+            return dynamicCatalogCache;
+        }
+
+        List<AstroCatalogItem> loadedCatalog = await DownloadCatalogAsync();
+        if (loadedCatalog.Count > 0)
+        {
+            dynamicCatalogCache = loadedCatalog;
+            cacheExpiresUtc = utcNow.AddHours(12);
+            return dynamicCatalogCache;
+        }
+
+        return dynamicCatalogCache;
+    }
+
+    private static async Task<List<AstroCatalogItem>> DownloadCatalogAsync()
+    {
+        List<AstroCatalogItem> items = new List<AstroCatalogItem>();
+
+        foreach (String endpoint in CatalogEndpoints)
+        {
+            try
+            {
+                using HttpResponseMessage response = await Http.GetAsync(endpoint);
+                if (!response.IsSuccessStatusCode)
+                {
+                    continue;
+                }
+
+                using JsonDocument document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+                ParseCatalogPayload(document.RootElement, items);
+
+                if (items.Count >= 120)
+                {
+                    break;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return items;
+    }
+
+    private static void ParseCatalogPayload(JsonElement root, List<AstroCatalogItem> items)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement element in root.EnumerateArray())
+            {
+                if (TryParseCatalogItem(element, out AstroCatalogItem parsedItem))
+                {
+                    items.Add(parsedItem);
+                }
+            }
+
+            return;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (root.TryGetProperty("features", out JsonElement features) && features.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement feature in features.EnumerateArray())
+            {
+                if (TryParseCatalogItem(feature, out AstroCatalogItem parsedItem))
+                {
+                    items.Add(parsedItem);
+                }
+            }
+        }
+    }
+
+    private static Boolean TryParseCatalogItem(JsonElement element, out AstroCatalogItem item)
+    {
+        item = null;
+
+        JsonElement source = element;
+        JsonElement properties = default;
+        if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("properties", out JsonElement propertiesNode))
+        {
+            properties = propertiesNode;
+            source = propertiesNode;
+        }
+
+        String name = GetFirstString(source, ["name", "desig", "id", "designation"]);
+        if (String.IsNullOrWhiteSpace(name) && properties.ValueKind == JsonValueKind.Object)
+        {
+            name = GetFirstString(properties, ["name", "desig", "id", "designation"]);
+        }
+
+        if (String.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        String category = GetFirstString(source, ["type", "category", "class"]);
+        if (String.IsNullOrWhiteSpace(category))
+        {
+            category = "Deep Sky";
+        }
+
+        Double magnitude;
+        if (!TryGetFirstDouble(source, ["mag", "magnitude", "vmag"], out magnitude))
+        {
+            magnitude = 6.5;
+        }
+
+        if (magnitude > 10.0)
+        {
+            return false;
+        }
+
+        Double rightAscensionHours;
+        Double declinationDegrees;
+
+        if (!TryGetFirstDouble(source, ["ra", "rightAscension"], out Double raRaw) ||
+            !TryGetFirstDouble(source, ["dec", "declination"], out Double decRaw))
+        {
+            if (!TryParseCoordinatesFromGeometry(element, out raRaw, out decRaw))
+            {
+                return false;
+            }
+        }
+
+        if (Math.Abs(raRaw) > 24)
+        {
+            rightAscensionHours = NormalizeDegrees(raRaw) / 15.0;
+        }
+        else
+        {
+            rightAscensionHours = NormalizeHours(raRaw);
+        }
+
+        declinationDegrees = decRaw;
+        if (declinationDegrees is < -90 or > 90)
+        {
+            return false;
+        }
+
+        String summarySlug = BuildSummarySlug(name);
+        item = new AstroCatalogItem(name, summarySlug, category, rightAscensionHours, declinationDegrees, magnitude);
+        return true;
+    }
+
+    private static Boolean TryParseCoordinatesFromGeometry(JsonElement element, out Double rightAscensionDegrees, out Double declinationDegrees)
+    {
+        rightAscensionDegrees = 0;
+        declinationDegrees = 0;
+
+        if (!element.TryGetProperty("geometry", out JsonElement geometry) || geometry.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (!geometry.TryGetProperty("coordinates", out JsonElement coordinates) || coordinates.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        JsonElement.ArrayEnumerator enumerator = coordinates.EnumerateArray();
+        if (!enumerator.MoveNext())
+        {
+            return false;
+        }
+
+        JsonElement raElement = enumerator.Current;
+        if (!TryGetDouble(raElement, out rightAscensionDegrees))
+        {
+            return false;
+        }
+
+        if (!enumerator.MoveNext())
+        {
+            return false;
+        }
+
+        JsonElement decElement = enumerator.Current;
+        if (!TryGetDouble(decElement, out declinationDegrees))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static String GetFirstString(JsonElement element, String[] names)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return string.Empty;
+        }
+
+        foreach (String name in names)
+        {
+            if (!element.TryGetProperty(name, out JsonElement property))
+            {
+                continue;
+            }
+
+            if (property.ValueKind == JsonValueKind.String)
+            {
+                String value = property.GetString() ?? string.Empty;
+                if (!String.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static Boolean TryGetFirstDouble(JsonElement element, String[] names, out Double value)
+    {
+        value = 0;
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (String name in names)
+        {
+            if (!element.TryGetProperty(name, out JsonElement property))
+            {
+                continue;
+            }
+
+            if (TryGetDouble(property, out Double parsedValue))
+            {
+                value = parsedValue;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Boolean TryGetDouble(JsonElement element, out Double value)
+    {
+        value = 0;
+
+        if (element.ValueKind == JsonValueKind.Number)
+        {
+            return element.TryGetDouble(out value);
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            String raw = element.GetString() ?? string.Empty;
+            return Double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        return false;
+    }
+
+    private static String BuildSummarySlug(String name)
+    {
+        String trimmed = name.Trim();
+        if (String.IsNullOrWhiteSpace(trimmed))
+        {
+            return "Astronomy";
+        }
+
+        String normalized = trimmed.Replace(' ', '_');
+        return normalized;
     }
 
     private static TargetComputation ComputeTarget(Double latitude, Double longitude, DateTime localDate, AstroCatalogItem item)
@@ -228,34 +506,181 @@ internal sealed class AstroService
         return normalized;
     }
 
+    private static Double NormalizeHours(Double hours)
+    {
+        Double normalized = hours % 24.0;
+        if (normalized < 0)
+        {
+            normalized += 24.0;
+        }
+
+        return normalized;
+    }
+
     private static async Task<String> GetSummaryAsync(String objectName, String summarySlug)
     {
+        HashSet<String> slugCandidates = new HashSet<String>(StringComparer.OrdinalIgnoreCase)
+        {
+            summarySlug,
+            $"{summarySlug}_(astronomy)",
+            BuildSummarySlug(objectName)
+        };
+
+        if (TryExtractMessierNumber(objectName, out Int32 messierNumber))
+        {
+            slugCandidates.Add($"Messier_{messierNumber}");
+            slugCandidates.Add($"M{messierNumber}_(astronomy)");
+        }
+
+        if (TryExtractCatalogNumber(objectName, "NGC", out Int32 ngcNumber))
+        {
+            slugCandidates.Add($"NGC_{ngcNumber}");
+        }
+
+        foreach (String slug in slugCandidates)
+        {
+            String summary = await TryGetWikipediaSummaryAsync(slug);
+            if (!String.IsNullOrWhiteSpace(summary))
+            {
+                return summary;
+            }
+        }
+
+        IReadOnlyList<String> searchTitles = await SearchAstronomyArticleTitlesAsync(objectName);
+        foreach (String title in searchTitles)
+        {
+            String searchedSummary = await TryGetWikipediaSummaryAsync(title);
+            if (!String.IsNullOrWhiteSpace(searchedSummary))
+            {
+                return searchedSummary;
+            }
+        }
+
+        return $"{objectName} is a strong target tonight with favorable placement for imaging.";
+    }
+
+    private static async Task<String> TryGetWikipediaSummaryAsync(String slug)
+    {
+        if (String.IsNullOrWhiteSpace(slug))
+        {
+            return string.Empty;
+        }
+
         try
         {
-            String encodedSlug = Uri.EscapeDataString(summarySlug);
+            String encodedSlug = Uri.EscapeDataString(slug);
             String url = $"https://en.wikipedia.org/api/rest_v1/page/summary/{encodedSlug}";
 
             using HttpResponseMessage response = await Http.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                return $"{objectName} is a strong target tonight with favorable placement for imaging.";
+                return string.Empty;
             }
 
             using JsonDocument doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
-            if (doc.RootElement.TryGetProperty("extract", out JsonElement extractElement))
+            if (!doc.RootElement.TryGetProperty("extract", out JsonElement extractElement))
             {
-                String? extract = extractElement.GetString();
-                if (!string.IsNullOrWhiteSpace(extract))
-                {
-                    return extract;
-                }
+                return string.Empty;
             }
+
+            String extract = extractElement.GetString() ?? string.Empty;
+            if (String.IsNullOrWhiteSpace(extract) || IsDisambiguationSummary(extract))
+            {
+                return string.Empty;
+            }
+
+            return extract;
         }
         catch
         {
+            return string.Empty;
+        }
+    }
+
+    private static Boolean IsDisambiguationSummary(String summary)
+    {
+        String normalized = summary.Trim().ToLowerInvariant();
+        return normalized.Contains(" refers to:") ||
+               normalized.Contains(" may refer to:") ||
+               normalized.Contains(" can refer to:");
+    }
+
+    private static async Task<IReadOnlyList<String>> SearchAstronomyArticleTitlesAsync(String objectName)
+    {
+        try
+        {
+            String searchQuery = Uri.EscapeDataString($"{objectName} astronomy deep sky object");
+            String searchUrl = $"https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit=5&srsearch={searchQuery}";
+
+            using HttpResponseMessage response = await Http.GetAsync(searchUrl);
+            if (!response.IsSuccessStatusCode)
+            {
+                return Array.Empty<String>();
+            }
+
+            using JsonDocument doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            if (!doc.RootElement.TryGetProperty("query", out JsonElement queryElement) ||
+                !queryElement.TryGetProperty("search", out JsonElement searchElement) ||
+                searchElement.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<String>();
+            }
+
+            List<String> titles = new List<String>();
+            foreach (JsonElement result in searchElement.EnumerateArray())
+            {
+                if (!result.TryGetProperty("title", out JsonElement titleElement))
+                {
+                    continue;
+                }
+
+                String title = titleElement.GetString() ?? string.Empty;
+                if (String.IsNullOrWhiteSpace(title))
+                {
+                    continue;
+                }
+
+                String normalizedTitle = title.ToLowerInvariant();
+                if (normalizedTitle.Contains("disambiguation") || normalizedTitle.Contains("(surname)") || normalizedTitle.Contains("(given name)"))
+                {
+                    continue;
+                }
+
+                titles.Add(title);
+            }
+
+            return titles;
+        }
+        catch
+        {
+            return Array.Empty<String>();
+        }
+    }
+
+    private static Boolean TryExtractMessierNumber(String objectName, out Int32 number)
+    {
+        number = 0;
+        String trimmed = objectName.Trim().ToUpperInvariant();
+        if (!trimmed.StartsWith("M", StringComparison.Ordinal))
+        {
+            return false;
         }
 
-        return $"{objectName} is a strong target tonight with favorable placement for imaging.";
+        String suffix = trimmed.Substring(1).Trim();
+        return Int32.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out number);
+    }
+
+    private static Boolean TryExtractCatalogNumber(String objectName, String catalogPrefix, out Int32 number)
+    {
+        number = 0;
+        String trimmed = objectName.Trim().ToUpperInvariant();
+        if (!trimmed.StartsWith(catalogPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        String suffix = trimmed.Substring(catalogPrefix.Length).Trim();
+        return Int32.TryParse(suffix, NumberStyles.Integer, CultureInfo.InvariantCulture, out number);
     }
 
     private record TargetComputation(Double VisibilityScore, Double BestAltitude, Double BestAzimuth, String BestWindowLabel);
